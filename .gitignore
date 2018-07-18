@@ -1,2 +1,4 @@
 *.kicad_pcb-bak
 *.kicad_pcb
+Silmaril_hw/Silmaril.xml
+Silmaril_hw/Silmaril.csv
