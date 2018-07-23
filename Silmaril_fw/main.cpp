@@ -35,6 +35,7 @@ void ReadIDfromEE();
 void ReadAndSetupMode();
 
 LedSmooth_t Led {LED_CTRL_PIN, 2500}; // 2500Hz PWM to allow ST1CC40 to handle it
+Vibro_t Vibro {VIBRO_SETUP};
 
 // ==== Timers ====
 //static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
@@ -59,6 +60,8 @@ int main(void) {
 
     Led.Init();
     Led.StartOrRestart(lsqStart);
+    Vibro.Init();
+    Vibro.StartOrRestart(vsqBrr);
 
     // ==== Time and timers ====
 //    TmrEverySecond.StartOrRestart();
