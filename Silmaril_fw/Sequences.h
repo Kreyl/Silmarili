@@ -188,7 +188,7 @@ const LedChunk_t lsqBlinkGreenX2[] = {
 };
 #endif
 
-#if 1 // ============================ LED RGB ==================================
+#if 0 // ============================ LED RGB ==================================
 #define LOW_BRTNESS     4
 //const LedRGBChunk_t lsqModeTxStart[] = {
 //        {csSetup, 0, clYellow},
@@ -271,8 +271,14 @@ const LedRGBChunk_t lsqPlayer[] = {
 
 #endif
 
-#if 0 // =========================== LED Smooth ================================
+#if 1 // =========================== LED Smooth ================================
 #define LED_TOP_BRIGHTNESS  255
+
+const LedSmoothChunk_t lsqStart[] = {
+        {csSetup, 360, LED_TOP_BRIGHTNESS},
+        {csSetup, 360, 0},
+        {csEnd}
+};
 
 const LedSmoothChunk_t lsqFadeIn[] = {
         {csSetup, 630, LED_TOP_BRIGHTNESS},

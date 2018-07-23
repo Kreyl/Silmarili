@@ -34,7 +34,7 @@ void ReadIDfromEE();
 
 void ReadAndSetupMode();
 
-LedSmooth_t Led {LED_CTRL_PIN};
+LedSmooth_t Led {LED_CTRL_PIN, 2500}; // 2500Hz PWM to allow ST1CC40 to handle it
 
 // ==== Timers ====
 //static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
@@ -52,19 +52,18 @@ int main(void) {
 
     // ==== Init hardware ====
     Uart.Init();
-//    ReadIDfromEE();
+    Uart.StartRx();
+    ReadIDfromEE();
     Printf("\r%S %S ID=%u\r", APP_NAME, XSTRINGIFY(BUILD_TIME), ID);
     Clk.PrintFreqs();
 
     Led.Init();
+    Led.StartOrRestart(lsqStart);
 
     // ==== Time and timers ====
 //    TmrEverySecond.StartOrRestart();
 
-    // ==== Radio ====
-//    if(Radio.Init() == retvOk) Led.StartOrRestart(lsqStart);
-//    else Led.StartOrRestart(lsqFailure);
-//    chThdSleepMilliseconds(1008);
+    Radio.Init();
 
     // Main cycle
     ITask();
@@ -152,7 +151,7 @@ void ReadIDfromEE() {
     ID = EE::Read32(EE_ADDR_DEVICE_ID);  // Read device ID
     if(ID < ID_MIN or ID > ID_MAX) {
         Printf("\rUsing default ID\r");
-        ID = ID_DEFAULT;
+        ID = 0;
     }
 }
 
