@@ -1,13 +1,14 @@
+#include "kl_lib.h"
 #include "board.h"
 #include "led.h"
 #include "vibro.h"
 #include "Sequences.h"
 #include "radio_lvl1.h"
 #include "kl_i2c.h"
-#include "kl_lib.h"
 #include "MsgQ.h"
 #include "main.h"
 #include "acc_mma8452.h"
+#include "kl_adc.h"
 
 #if 1 // ======================== Variables and defines ========================
 // Forever
@@ -34,6 +35,7 @@ Vibro_t Vibro {VIBRO_SETUP};
 
 uint8_t SignalTx = SIGN_SILMARIL; // Always
 bool IsIdle = true;
+bool IsVibrating = true;
 
 Acc_t Acc(&i2c1);
 PinOutput_t AccPwr(ACC_PWR_PIN);
@@ -49,6 +51,7 @@ int main(void) {
     // ==== Init Vcore & clock system ====
     SetupVCore(vcore1V5);
     Clk.SetMSI4MHz();
+    Clk.EnableHSI();    // Required foe ADC
     Clk.UpdateFreqValues();
 
     // === Init OS ===
@@ -65,7 +68,8 @@ int main(void) {
 
     Led.Init();
     Vibro.Init();
-//    Vibro.StartOrRestart(vsqBrr);
+    Vibro.StartOrRestart(vsqBrr);
+    Vibro.SetupSeqEndEvt(evtIdVibroEnd);
 
     AccPwr.Init();
     AccPwr.SetHi();
@@ -80,6 +84,12 @@ int main(void) {
     EnterIdle();
 
     Radio.Init();
+
+    // ==== Adc ====
+    PinSetupAnalog(BAT_MEAS_PIN);
+//    CalibrationCounter
+    Adc.Init();
+    Adc.EnableVRef();
 
     // Main cycle
     ITask();
@@ -101,10 +111,23 @@ void ITask() {
 
             case evtIdAcc:
 //                Printf("Acc\r");
-                if(IsIdle) {
+                if(IsIdle and !IsVibrating) {
                     Led.StartOrRestart(lsqTop);
                     TmrNoMovement.StartOrRestart();
                 }
+                break;
+
+            case evtIdAdcRslt:
+//                Printf("Ubat=%u\r", Msg.Value*2);
+                if(Msg.Value*2 < 3600) {
+                    IsVibrating = true; // Ignore Acc when vibrating
+                    Vibro.StartOrContinue(vsqDischarged);
+                }
+                break;
+
+            case evtIdVibroEnd:
+//                Printf("VibroEnd\r");
+                IsVibrating = false;
                 break;
 
             case evtIdShellCmd:

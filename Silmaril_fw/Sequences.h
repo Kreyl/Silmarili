@@ -383,7 +383,7 @@ const BeepChunk_t bsqBeepPillBad[] = {
 #endif // beeper
 
 #if 1 // ============================== Vibro ==================================
-#define VIBRO_VOLUME    100  // 1 to 100
+#define VIBRO_VOLUME    36  // 1 to 100
 
 #define VIBRO_SHORT_MS          99
 #define VIBRO_REPEAT_PERIOD     1008
@@ -424,40 +424,12 @@ const BaseChunk_t vsqBrrBrrBrr[] = {
         {csEnd}
 };
 
-// ==== Health ====
-const BaseChunk_t vsqIll[] = {
-        {csSetup, VIBRO_VOLUME},
-        {csWait, 999},
-        {csSetup, 0},
-        {csWait, 3600},
-        {csSetup, VIBRO_VOLUME},
-        {csWait, VIBRO_SHORT_MS},
-        {csGoto, 2}
-};
-
-const BaseChunk_t vsqDeath[] = {
-        {csSetup, VIBRO_VOLUME},
-        {csWait, 999},
-        {csSetup, 0},
-        {csWait, 4005},
-        {csSetup, VIBRO_VOLUME},
-        {csWait, VIBRO_SHORT_MS},
-        {csGoto, 2}
-};
-
-// Cataclysm
-const BaseChunk_t vsqCataclysm[] = {
-        {csSetup, VIBRO_VOLUME},
-        {csWait, 999},
-        {csSetup, 0},
-        {csWait, 999},
-        {csSetup, VIBRO_VOLUME},
+const BaseChunk_t vsqDischarged[] = {
+        {csSetup, 36},
         {csWait, VIBRO_SHORT_MS},
         {csSetup, 0},
-        {csWait, 99},
-        {csSetup, VIBRO_VOLUME},
-        {csWait, VIBRO_SHORT_MS},
-        {csGoto, 2}
+        {csWait, 540},
+        {csEnd}
 };
 
 /*

@@ -19,4 +19,5 @@ enum EvtMsgId_t {
     evtIdCheckRxTable,
     evtIdAcc,
     evtIdNoMove,
+    evtIdVibroEnd,
 };

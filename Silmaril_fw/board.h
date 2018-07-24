@@ -15,7 +15,7 @@
 #define SYS_TIM_CLK         (Clk.APB1FreqHz)
 #define I2C1_ENABLED        TRUE
 #define I2C_USE_SEMAPHORE   FALSE
-#define ADC_REQUIRED        FALSE
+#define ADC_REQUIRED        TRUE
 
 #if 1 // ========================== GPIO =======================================
 // PortMinTim_t: GPIO, Pin, Tim, TimChnl, invInverted, omPushPull, TopValue
@@ -23,6 +23,9 @@
 #define UART_GPIO       GPIOA
 #define UART_TX_PIN     9
 #define UART_RX_PIN     10
+
+// Battery measurement
+#define BAT_MEAS_PIN    GPIOA, 1
 
 // LED
 #define LED_CTRL_PIN    { GPIOB, 0, TIM3, 3, invNotInverted, omPushPull, 255 }
@@ -61,15 +64,16 @@
 #endif
 
 #if ADC_REQUIRED // ======================= Inner ADC ==========================
+#define ADC_MEAS_PERIOD_MS  6507
 // Clock divider: clock is generated from the APB2
 #define ADC_CLK_DIVIDER     adcDiv2
 
 // ADC channels
-//#define BAT_CHNL          1
+#define BAT_CHNL            1
 
 #define ADC_VREFINT_CHNL    17  // All 4xx, F072 and L151 devices. Do not change.
-#define ADC_CHANNELS        { ADC_VREFINT_CHNL }
-#define ADC_CHANNEL_CNT     1   // Do not use countof(AdcChannels) as preprocessor does not know what is countof => cannot check
+#define ADC_CHANNELS        { BAT_CHNL, ADC_VREFINT_CHNL }
+#define ADC_CHANNEL_CNT     2   // Do not use countof(AdcChannels) as preprocessor does not know what is countof => cannot check
 #define ADC_SAMPLE_TIME     ast96Cycles
 #define ADC_SAMPLE_CNT      8   // How many times to measure every channel
 

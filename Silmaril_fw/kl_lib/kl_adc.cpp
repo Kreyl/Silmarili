@@ -9,6 +9,7 @@
 #include "main.h"
 #include "board.h"
 #include "MsgQ.h"
+#include "shell.h"
 
 #if ADC_REQUIRED
 
@@ -31,16 +32,16 @@ static void AdcThread(void *arg) {
 //        Printf("AdcDone\r");
         if(FirstConversion) FirstConversion = false;
         else {
-            uint32_t VRef_adc = Adc.GetResult(ADC_VREFINT_CHNL);
+//            uint32_t VRef_adc = Adc.GetResult(ADC_VREFINT_CHNL);
 //            Printf("VRef_adc=%u\r", VRef_adc);
             // Iterate all channels
             for(int i=0; i<ADC_CHANNEL_CNT; i++) {
                 if(AdcChannels[i] == ADC_VREFINT_CHNL) continue; // Ignore VrefInt channel
                 uint32_t Vadc = Adc.GetResult(AdcChannels[i]);
-                uint32_t Vmv = Adc.Adc2mV(Vadc, VRef_adc);   // Resistor divider
+//                uint32_t Vmv = Adc.Adc2mV(Vadc, VRef_adc);
+                uint32_t Vmv = (Vadc * 3300UL) / 4095UL;
 //                Printf("N=%u; Vadc=%u; Vmv=%u\r", i, Vadc, Vmv);
-                EvtMsg_t Msg(evtIdAdcRslt, AdcChannels[i], Vmv);
-                EvtQMain.SendNowOrExit(Msg);
+                EvtQMain.SendNowOrExit(EvtMsg_t(evtIdAdcRslt, AdcChannels[i], Vmv));
             } // for
         } // not first conv
     } // while true
