@@ -27,6 +27,7 @@ void ReadIDfromEE();
 
 void ReadAndSetupMode();
 void EnterIdle();
+void CheckRxTable();
 
 LedSmooth_t Led {LED_CTRL_PIN, 1000}; // 2500Hz PWM to allow ST1CC40 to handle it
 Vibro_t Vibro {VIBRO_SETUP};
@@ -74,6 +75,8 @@ int main(void) {
     Acc.Init();
 
     TmrEverySecond.StartOrRestart();
+    TmrRxTableCheck.StartOrRestart();
+
     EnterIdle();
 
     Radio.Init();
@@ -92,10 +95,12 @@ void ITask() {
                 ReadAndSetupMode();
                 break;
 
+            case evtIdCheckRxTable: CheckRxTable(); break;
+
             case evtIdNoMove: if(IsIdle) Led.StartOrContinue(lsqDim); break;
 
             case evtIdAcc:
-                Printf("Acc\r");
+//                Printf("Acc\r");
                 if(IsIdle) {
                     Led.StartOrRestart(lsqTop);
                     TmrNoMovement.StartOrRestart();
@@ -111,6 +116,33 @@ void ITask() {
         } // Switch
     } // while true
 } // ITask()
+
+void CheckRxTable() {
+    uint32_t Cnt = Radio.RxTable.GetCount();
+    uint8_t OatherCnt = 0;
+    if(Cnt > 0) {
+        // Analyze RxTable
+        for(uint32_t i=0; i<Cnt; i++) {
+            if(Radio.RxTable.Buf[i].Signal & SIGN_OATH) {
+                OatherCnt++;
+                if(OatherCnt == 3) break; // Stop if
+            }
+        }
+        Radio.RxTable.Clear();
+    } // Cnt > 0
+    // Process what counted
+    if(OatherCnt == 0) {
+        if(!IsIdle) {
+            EnterIdle();
+            IsIdle = true;
+        }
+    }
+    else {
+        IsIdle = false;
+        TmrNoMovement.Stop();
+        Led.StartOrContinue(lsqOathIsNear);
+    }
+}
 
 void EnterIdle() {
     TmrNoMovement.StartOrRestart();

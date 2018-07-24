@@ -52,25 +52,25 @@ union rPkt_t  {
 #define RXTABLE_SZ              50
 class RxTable_t {
 private:
-    rPkt_t IBuf[RXTABLE_SZ];
     uint32_t Cnt = 0;
 public:
+    rPkt_t Buf[RXTABLE_SZ];
     void AddOrReplaceExistingPkt(rPkt_t &APkt) {
         for(uint32_t i=0; i<Cnt; i++) {
-            if(IBuf[i].ID == APkt.ID) {
-                IBuf[i] = APkt; // Replace with newer pkt
+            if(Buf[i].ID == APkt.ID) {
+                Buf[i] = APkt; // Replace with newer pkt
                 return;
             }
         }
         if(Cnt >= RXTABLE_SZ) return;   // Buffer is full, nothing to do here
-        IBuf[Cnt] = APkt;
+        Buf[Cnt] = APkt;
         Cnt++;
     }
 
     uint8_t GetPktByID(uint8_t ID, rPkt_t **ptr) {
         for(uint32_t i=0; i<Cnt; i++) {
-            if(IBuf[i].ID == ID) {
-                *ptr = &IBuf[i];
+            if(Buf[i].ID == ID) {
+                *ptr = &Buf[i];
                 return retvOk;
             }
         }
@@ -79,7 +79,7 @@ public:
 
     bool IDPresents(uint8_t ID) {
         for(uint32_t i=0; i<Cnt; i++) {
-            if(IBuf[i].ID == ID) return true;
+            if(Buf[i].ID == ID) return true;
         }
         return false;
     }
@@ -89,7 +89,7 @@ public:
 
     void Print() {
         Printf("RxTable Cnt: %u\r", Cnt);
-        for(uint32_t i=0; i<Cnt; i++) IBuf[i].Print();
+        for(uint32_t i=0; i<Cnt; i++) Buf[i].Print();
     }
 };
 #endif

@@ -285,6 +285,12 @@ const LedSmoothChunk_t lsqDim[] = {
         {csEnd}
 };
 
+const LedSmoothChunk_t lsqOathIsNear[] = {
+        {csSetup, 720, LED_TOP_BRT},
+        {csSetup, 720, LED_DIM_BRT},
+        {csGoto, 0}
+};
+
 #endif
 
 #if 1 // ============================= Beeper ==================================
