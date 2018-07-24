@@ -30,6 +30,11 @@
 // Vibro
 #define VIBRO_SETUP     { GPIOB, 12, TIM10, 1, invNotInverted, omPushPull, 99 }
 
+// Acc
+#define ACC_IRQ_GPIO    GPIOB
+#define ACC_IRQ_PIN     4
+#define ACC_PWR_PIN     GPIOB, 5, omPushPull
+
 // DIP switch
 #define DIP_SW_CNT      6
 #define DIP_SW1         { GPIOB, 1, pudPullUp }
@@ -53,7 +58,6 @@
 
 #if 1 // =========================== I2C ================================
 #define I2C1_BAUDRATE   400000
-#define I2C_ACC        i2c1
 #endif
 
 #if ADC_REQUIRED // ======================= Inner ADC ==========================

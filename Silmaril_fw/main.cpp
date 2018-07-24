@@ -1,10 +1,3 @@
-/*
- * main.cpp
- *
- *  Created on: 20 февр. 2014 г.
- *      Author: g.kruglov
- */
-
 #include "board.h"
 #include "led.h"
 #include "vibro.h"
@@ -14,6 +7,7 @@
 #include "kl_lib.h"
 #include "MsgQ.h"
 #include "main.h"
+#include "acc_mma8452.h"
 
 #if 1 // ======================== Variables and defines ========================
 // Forever
@@ -23,7 +17,6 @@ CmdUart_t Uart{&CmdUartParams};
 static void ITask();
 static void OnCmd(Shell_t *PShell);
 
-// EEAddresses
 #define EE_ADDR_DEVICE_ID       0
 
 uint8_t ID;
@@ -34,14 +27,18 @@ void ReadIDfromEE();
 
 void ReadAndSetupMode();
 
-LedSmooth_t Led {LED_CTRL_PIN, 2500}; // 2500Hz PWM to allow ST1CC40 to handle it
+LedSmooth_t Led {LED_CTRL_PIN, 1000}; // 2500Hz PWM to allow ST1CC40 to handle it
 Vibro_t Vibro {VIBRO_SETUP};
 
 uint8_t SignalTx = SIGN_SILMARIL; // Always
 bool IdleMode = true;
 
+Acc_t Acc(&i2c1);
+PinOutput_t AccPwr(ACC_PWR_PIN);
+
 // ==== Timers ====
 static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
+static TmrKL_t TmrNoMovement  {MS2ST(4500), evtIdNoMove, tktOneShot};
 static TmrKL_t TmrRxTableCheck {MS2ST(3600), evtIdCheckRxTable, tktPeriodic};
 static int32_t TimeS;
 #endif
@@ -65,13 +62,20 @@ int main(void) {
     Clk.PrintFreqs();
 
     Led.Init();
-//    Led.SetBrightness(255);
-//    Led.StartOrRestart(lsqStart);
+    Led.StartOrRestart(lsqTop);
     Vibro.Init();
 //    Vibro.StartOrRestart(vsqBrr);
 
+    AccPwr.Init();
+    AccPwr.SetHi();
+    chThdSleepMilliseconds(18);
+    i2c1.Init();
+//    i2c1.ScanBus();
+    Acc.Init();
+
     // ==== Time and timers ====
     TmrEverySecond.StartOrRestart();
+    TmrNoMovement.StartOrRestart();
 
     Radio.Init();
 
@@ -87,6 +91,14 @@ void ITask() {
             case evtIdEverySecond:
                 TimeS++;
                 ReadAndSetupMode();
+                break;
+
+            case evtIdNoMove: Led.StartOrContinue(lsqDim); break;
+
+            case evtIdAcc:
+                Printf("Acc\r");
+                Led.StartOrRestart(lsqTop);
+                TmrNoMovement.StartOrRestart();
                 break;
 
             case evtIdShellCmd:

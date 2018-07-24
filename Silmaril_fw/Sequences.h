@@ -272,28 +272,16 @@ const LedRGBChunk_t lsqPlayer[] = {
 #endif
 
 #if 1 // =========================== LED Smooth ================================
-#define LED_TOP_BRIGHTNESS  255
+#define LED_TOP_BRT     255
+#define LED_DIM_BRT     72
 
-const LedSmoothChunk_t lsqStart[] = {
-        {csSetup, 360, LED_TOP_BRIGHTNESS},
-//        {csSetup, 360, 0},
+const LedSmoothChunk_t lsqTop[] = {
+        {csSetup, 1530, LED_TOP_BRT},
         {csEnd}
 };
 
-const LedSmoothChunk_t lsqFadeIn[] = {
-        {csSetup, 630, LED_TOP_BRIGHTNESS},
-        {csEnd}
-};
-const LedSmoothChunk_t lsqFadeOut[] = {
-        {csSetup, 630, 0},
-        {csEnd}
-};
-const LedSmoothChunk_t lsqEnterActive[] = {
-        {csSetup, 0, LED_TOP_BRIGHTNESS},
-        {csEnd}
-};
-const LedSmoothChunk_t lsqEnterIdle[] = {
-        {csSetup, 360, 0},
+const LedSmoothChunk_t lsqDim[] = {
+        {csSetup, 1530, LED_DIM_BRT},
         {csEnd}
 };
 
