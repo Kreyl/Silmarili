@@ -26,12 +26,13 @@ static uint8_t ISetID(int32_t NewID);
 void ReadIDfromEE();
 
 void ReadAndSetupMode();
+void EnterIdle();
 
 LedSmooth_t Led {LED_CTRL_PIN, 1000}; // 2500Hz PWM to allow ST1CC40 to handle it
 Vibro_t Vibro {VIBRO_SETUP};
 
 uint8_t SignalTx = SIGN_SILMARIL; // Always
-bool IdleMode = true;
+bool IsIdle = true;
 
 Acc_t Acc(&i2c1);
 PinOutput_t AccPwr(ACC_PWR_PIN);
@@ -62,7 +63,6 @@ int main(void) {
     Clk.PrintFreqs();
 
     Led.Init();
-    Led.StartOrRestart(lsqTop);
     Vibro.Init();
 //    Vibro.StartOrRestart(vsqBrr);
 
@@ -73,9 +73,8 @@ int main(void) {
 //    i2c1.ScanBus();
     Acc.Init();
 
-    // ==== Time and timers ====
     TmrEverySecond.StartOrRestart();
-    TmrNoMovement.StartOrRestart();
+    EnterIdle();
 
     Radio.Init();
 
@@ -93,12 +92,14 @@ void ITask() {
                 ReadAndSetupMode();
                 break;
 
-            case evtIdNoMove: Led.StartOrContinue(lsqDim); break;
+            case evtIdNoMove: if(IsIdle) Led.StartOrContinue(lsqDim); break;
 
             case evtIdAcc:
                 Printf("Acc\r");
-                Led.StartOrRestart(lsqTop);
-                TmrNoMovement.StartOrRestart();
+                if(IsIdle) {
+                    Led.StartOrRestart(lsqTop);
+                    TmrNoMovement.StartOrRestart();
+                }
                 break;
 
             case evtIdShellCmd:
@@ -110,6 +111,11 @@ void ITask() {
         } // Switch
     } // while true
 } // ITask()
+
+void EnterIdle() {
+    TmrNoMovement.StartOrRestart();
+    Led.StartOrRestart(lsqTop);
+}
 
 __unused
 static const uint8_t PwrTable[12] = {
