@@ -26,7 +26,7 @@ static void OnCmd(Shell_t *PShell);
 // EEAddresses
 #define EE_ADDR_DEVICE_ID       0
 
-int32_t ID;
+uint8_t ID;
 static const PinInputSetup_t DipSwPin[DIP_SW_CNT] = { DIP_SW6, DIP_SW5, DIP_SW4, DIP_SW3, DIP_SW2, DIP_SW1 };
 static uint8_t GetDipSwitch();
 static uint8_t ISetID(int32_t NewID);
@@ -37,13 +37,19 @@ void ReadAndSetupMode();
 LedSmooth_t Led {LED_CTRL_PIN, 2500}; // 2500Hz PWM to allow ST1CC40 to handle it
 Vibro_t Vibro {VIBRO_SETUP};
 
+uint8_t SignalTx = SIGN_SILMARIL; // Always
+bool IdleMode = true;
+
 // ==== Timers ====
-//static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
+static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
+static TmrKL_t TmrRxTableCheck {MS2ST(3600), evtIdCheckRxTable, tktPeriodic};
+static int32_t TimeS;
 #endif
 
 int main(void) {
     // ==== Init Vcore & clock system ====
-    SetupVCore(vcore1V2);
+    SetupVCore(vcore1V5);
+    Clk.SetMSI4MHz();
     Clk.UpdateFreqValues();
 
     // === Init OS ===
@@ -59,12 +65,13 @@ int main(void) {
     Clk.PrintFreqs();
 
     Led.Init();
-    Led.StartOrRestart(lsqStart);
+//    Led.SetBrightness(255);
+//    Led.StartOrRestart(lsqStart);
     Vibro.Init();
-    Vibro.StartOrRestart(vsqBrr);
+//    Vibro.StartOrRestart(vsqBrr);
 
     // ==== Time and timers ====
-//    TmrEverySecond.StartOrRestart();
+    TmrEverySecond.StartOrRestart();
 
     Radio.Init();
 
@@ -78,6 +85,8 @@ void ITask() {
         EvtMsg_t Msg = EvtQMain.Fetch(TIME_INFINITE);
         switch(Msg.ID) {
             case evtIdEverySecond:
+                TimeS++;
+                ReadAndSetupMode();
                 break;
 
             case evtIdShellCmd:
@@ -116,7 +125,7 @@ void ReadAndSetupMode() {
     OldDipSettings = b;
     RMsg_t msg;
     // Select TX pwr
-    msg.Cmd = R_MSG_SET_PWR;
+    msg.Cmd = rmsgSetPwr;
     b &= 0b1111; // Remove high bits
     msg.Value = (b > 11)? CC_PwrPlus12dBm : PwrTable[b];
     Printf("Pwr=%u\r", b);
@@ -136,7 +145,7 @@ void OnCmd(Shell_t *PShell) {
     else if(PCmd->NameIs("GetID")) PShell->Reply("ID", ID);
 
     else if(PCmd->NameIs("SetID")) {
-        if(PCmd->GetNext<int32_t>(&ID) != retvOk) { PShell->Ack(retvCmdError); return; }
+        if(PCmd->GetNext<uint8_t>(&ID) != retvOk) { PShell->Ack(retvCmdError); return; }
         uint8_t r = ISetID(ID);
 //        RMsg_t msg;
 //        msg.Cmd = R_MSG_SET_CHNL;

@@ -276,7 +276,7 @@ const LedRGBChunk_t lsqPlayer[] = {
 
 const LedSmoothChunk_t lsqStart[] = {
         {csSetup, 360, LED_TOP_BRIGHTNESS},
-        {csSetup, 360, 0},
+//        {csSetup, 360, 0},
         {csEnd}
 };
 
