@@ -49,6 +49,12 @@ public:
     uint8_t Init();
     void SetChannel(uint8_t AChannel);
     void SetTxPower(uint8_t APwr)  { WriteRegister(CC_PATABLE, APwr); }
+    uint8_t GetTxPower()  {
+        uint8_t Pwr = 0;
+        ReadRegister(CC_PATABLE, &Pwr);
+        return Pwr;
+    }
+
     void SetPktSize(uint8_t ASize) { WriteRegister(CC_PKTLEN, ASize); }
     // State change
     void Transmit(void *Ptr, uint8_t Len);
@@ -79,6 +85,8 @@ public:
         }
         else chThdResumeI(&ThdRef, MSG_OK);  // NotNull check performed inside chThdResumeI
     }
+
+
     cc1101_t(
             SPI_TypeDef *ASpi, GPIO_TypeDef *APGpio,
             uint16_t ASck, uint16_t AMiso, uint16_t AMosi, uint16_t ACs, uint16_t AGdo0):

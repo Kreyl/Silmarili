@@ -37,7 +37,7 @@ union rPkt_t  {
 #endif
 
 #if 1 // =================== Channels, cycles, Rssi  ===========================
-#define RCHNL               0
+#define RCHNL               7
 #define RCYCLE_CNT          4
 #define RSLOT_CNT           (ID_MAX - ID_MIN + 1)
 #endif

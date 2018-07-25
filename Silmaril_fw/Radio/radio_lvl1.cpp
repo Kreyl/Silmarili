@@ -143,7 +143,7 @@ void rLevel1_t::ITask() {
             case rmsgPktRx:
                 CCState = ccstIdle;
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
-                    Printf("Rssi %d; ", Rssi);
+//                    Printf("Rssi %d; ", Rssi);
 //                    PktRx.Print();
                     RadioTime.Adjust();
                     RxTable.AddOrReplaceExistingPkt(PktRx);
@@ -151,7 +151,10 @@ void rLevel1_t::ITask() {
                 break;
 
             case rmsgSetPwr: CC.SetTxPower(msg.Value); break;
-            case rmsgSetChnl: CC.SetChannel(msg.Value); break;
+
+            case rmsgSetChnl:
+//                CC.SetChannel(msg.Value);
+                break;
         } // switch
     } // while
 }
