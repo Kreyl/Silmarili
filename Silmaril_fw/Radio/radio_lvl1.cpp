@@ -33,7 +33,7 @@ cc1101_t CC(CC_Setup0);
 rLevel1_t Radio;
 void TmrTimeslotCallback(void *p);
 //static volatile enum CCState_t {ccstIdle, ccstRx, ccstTx} CCState = ccstIdle;
-static bool InsideTx = false;
+static enum CCState_t { ccstNone, ccstInsideTx, ccstInsideRx } CCState = ccstNone;
 extern uint8_t SignalTx;
 
 static Timer_t SyncTmr(TIM9);
@@ -58,14 +58,14 @@ public:
     }
 
     void OnNewSupercycleI() {
-        if(ID == 0) {
-            InsideTx = true;
+        if(ID == 0) { // TX immediately
+            CCState = ccstInsideTx;
             Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
-            uint32_t NextTime = TIMESLOT_DURATION_TICS;
-            SyncTmr.SetCCR1(NextTime); // Will fire at end of TX timeslot
-//            PrintfI("Upd %u\r", NextTime);
+            SyncTmr.SetCCR1(TIMESLOT_DURATION_TICS); // Will fire at end of TX timeslot
         }
-        else {
+        else { // Receive first
+            CCState = ccstInsideRx;
+            Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
             SyncTmr.SetCCR1(TIMESLOT_DURATION_TICS * ID); // Will fire at start of TX timeslot
         }
         // Process TimeSrc
@@ -74,18 +74,23 @@ public:
     }
 
     void OnCompareI(uint32_t CurrentTick) {
-        if(InsideTx) { // End of TX slot
-            InsideTx = false;
-            uint32_t NextTime = CurrentTick + (TIMESLOT_CNT - 1) * TIMESLOT_DURATION_TICS;
-            // Do not setup new TX slot if too close to end of supercycle
-            if(NextTime < (TICS_TOTAL - TIMESLOT_DURATION_TICS)) SyncTmr.SetCCR1(NextTime); // Will fire at start of TX timeslot
-//            PrintfI("CmpTxEnd  %u; %u\r", CurrentTick, NextTime);
+        uint32_t NextTime;
+        if(CCState == ccstInsideTx) { // End of TX slot
             if(CurrentTick < (TIMESLOT_CNT * TIMESLOT_DURATION_TICS)) { // Zero cycle
-                Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
+                // Enter RX
+                Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx));
+                CCState = ccstInsideRx;
+                NextTime = TIMESLOT_CNT * TIMESLOT_DURATION_TICS; // End of zero cycle
             }
             else { // Non-zero cycle
                 Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToSleep));
             }
+
+
+            uint32_t NextTime = CurrentTick + (TIMESLOT_CNT - 1) * TIMESLOT_DURATION_TICS;
+            // Do not setup new TX slot if too close to end of supercycle
+            if(NextTime < (TICS_TOTAL - TIMESLOT_DURATION_TICS)) SyncTmr.SetCCR1(NextTime); // Will fire at start of TX timeslot
+//            PrintfI("CmpTxEnd  %u; %u\r", CurrentTick, NextTime);
         }
         else { // Start of TX slot
             InsideTx = true;
