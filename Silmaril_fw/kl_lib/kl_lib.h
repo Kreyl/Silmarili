@@ -470,6 +470,13 @@ public:
     void SetupPrescaler(uint32_t PrescaledFreqHz) const;
     void SetCounter(uint32_t Value) const { ITmr->CNT = Value; }
     uint32_t GetCounter() const { return ITmr->CNT; }
+
+    // Compare
+    void SetCCR1(uint32_t AValue) const { ITmr->CCR1 = AValue; }
+    void SetCCR2(uint32_t AValue) const { ITmr->CCR2 = AValue; }
+    void SetCCR3(uint32_t AValue) const { ITmr->CCR3 = AValue; }
+    void SetCCR4(uint32_t AValue) const { ITmr->CCR4 = AValue; }
+
     // Master/Slave
     void SetTriggerInput(TmrTrigInput_t TrgInput) const {
         uint16_t tmp = ITmr->SMCR;
@@ -493,13 +500,30 @@ public:
         tmp |= (uint16_t)SlaveMode;
         ITmr->SMCR = tmp;
     }
+
     // DMA, Irq, Evt
     void EnableDmaOnTrigger() const { ITmr->DIER |= TIM_DIER_TDE; }
     void EnableDMAOnCapture(uint8_t CaptureReq) const { ITmr->DIER |= (1 << (CaptureReq + 8)); }
     void GenerateUpdateEvt()  const { ITmr->EGR = TIM_EGR_UG; }
-    void EnableIrqOnUpdate()  const { ITmr->DIER |= TIM_DIER_UIE; }
+    // Enable
     void EnableIrq(uint32_t IrqChnl, uint32_t IrqPriority) const { nvicEnableVector(IrqChnl, IrqPriority); }
-    void ClearIrqPendingBit() const { ITmr->SR &= ~TIM_SR_UIF; }
+    void EnableIrqOnUpdate()  const { ITmr->DIER |= TIM_DIER_UIE; }
+    void EnableIrqOnCompare1() const { ITmr->DIER |= TIM_DIER_CC1IE; }
+    void EnableIrqOnCompare2() const { ITmr->DIER |= TIM_DIER_CC2IE; }
+    void EnableIrqOnCompare3() const { ITmr->DIER |= TIM_DIER_CC3IE; }
+    void EnableIrqOnCompare4() const { ITmr->DIER |= TIM_DIER_CC4IE; }
+    // Clear
+    void ClearUpdateIrqPendingBit()   const { ITmr->SR &= ~TIM_SR_UIF; }
+    void ClearCompare1IrqPendingBit() const { ITmr->SR &= ~TIM_SR_CC1IF; }
+    void ClearCompare2IrqPendingBit() const { ITmr->SR &= ~TIM_SR_CC2IF; }
+    void ClearCompare3IrqPendingBit() const { ITmr->SR &= ~TIM_SR_CC3IF; }
+    void ClearCompare4IrqPendingBit() const { ITmr->SR &= ~TIM_SR_CC4IF; }
+    // Check
+    bool IsUpdateIrqFired() const { return (ITmr->SR & TIM_SR_UIF); }
+    bool IsCompare1IrqFired() const { return (ITmr->SR & TIM_SR_CC1IF); }
+    bool IsCompare2IrqFired() const { return (ITmr->SR & TIM_SR_CC2IF); }
+    bool IsCompare3IrqFired() const { return (ITmr->SR & TIM_SR_CC3IF); }
+    bool IsCompare4IrqFired() const { return (ITmr->SR & TIM_SR_CC4IF); }
 };
 #endif
 
