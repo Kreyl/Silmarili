@@ -47,7 +47,7 @@ union rPkt_t  {
 #endif
 
 #if 1 // =========================== Timings ===================================
-#define TIMESLOT_DURATION_TICS  25
+#define TIMESLOT_DURATION_TICS  54
 #define SCYCLES_TO_KEEP_TIMESRC 4   // After that amount of supercycles, TimeSrcID become self ID
 #endif
 

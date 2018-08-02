@@ -143,17 +143,12 @@ uint8_t cc1101_t::FlushTxFIFO() {
 //}
 
 void cc1101_t::Transmit(void *Ptr, uint8_t Len) {
-//    uint8_t b;
-//    ReadRegister(CC_TXBYTES, &b);
-//    if(b!=0) Printf("Tx %X\r", b);
     ICallback = nullptr;
 //     WaitUntilChannelIsBusy();   // If this is not done, time after time FIFO is destroyed
-//    FlushTxFIFO();
+    EnterTX();
     if(Len < 64) {
-        WriteTX((uint8_t*)Ptr, Len);
-        EnterTX();
-        // Enter TX and wait IRQ
         chSysLock();
+        WriteTX((uint8_t*)Ptr, Len);
         chThdSuspendS(&ThdRef); // Wait IRQ
         chSysUnlock();          // Will be here when IRQ fires
     }
@@ -341,7 +336,6 @@ uint8_t cc1101_t::WriteStrobe (uint8_t AStrobe) {
 }
 
 uint8_t cc1101_t::WriteTX(uint8_t* Ptr, uint8_t Length) {
-
     CsLo();                                                     // Start transmission
     if(BusyWait() != retvOk) { // Wait for chip to become ready
         CsHi();
