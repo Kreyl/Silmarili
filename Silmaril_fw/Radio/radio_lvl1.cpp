@@ -20,12 +20,14 @@ cc1101_t CC(CC_Setup0);
 #define DBG1_SET()  PinSetHi(DBG_GPIO1, DBG_PIN1)
 #define DBG1_CLR()  PinSetLo(DBG_GPIO1, DBG_PIN1)
 #define DBG_GPIO2   GPIOB
-#define DBG_PIN2    8
+#define DBG_PIN2    9
 #define DBG2_SET()  PinSetHi(DBG_GPIO2, DBG_PIN2)
 #define DBG2_CLR()  PinSetLo(DBG_GPIO2, DBG_PIN2)
 #else
 #define DBG1_SET()
 #define DBG1_CLR()
+#define DBG2_SET()
+#define DBG2_CLR()
 #endif
 
 rLevel1_t Radio;
@@ -141,13 +143,17 @@ void rLevel1_t::ITask() {
                 break;
 
             case rmsgPktRx:
+                DBG2_CLR();
                 CCState = ccstIdle;
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
-//                    Printf("Rssi %d; ", Rssi);
-//                    PktRx.Print();
+//                    if(PktRx.ID > 9) {
+                        Printf("%d; ", Rssi);
+                        PktRx.Print();
+//                    }
                     RadioTime.Adjust();
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
+                DBG2_SET();
                 break;
 
             case rmsgSetPwr: CC.SetTxPower(msg.Value); break;
@@ -174,11 +180,11 @@ uint8_t rLevel1_t::Init() {
         CC.SetPktSize(RPKT_LEN);
         CC.SetChannel(RCHNL);
         // Measure timeslot duration
-//        systime_t TimeStart = chVTGetSystemTimeX();
-//        CC.Recalibrate();
-//        CC.Transmit(&PktTx, RPKT_LEN);
-//        systime_t TimeslotDuration = chVTTimeElapsedSinceX(TimeStart);
-//        Printf("Timeslot duration, systime: %u\r", TimeslotDuration);
+        systime_t TimeStart = chVTGetSystemTimeX();
+        CC.Recalibrate();
+        CC.Transmit(&PktTx, RPKT_LEN);
+        systime_t TimeslotDuration = chVTTimeElapsedSinceX(TimeStart);
+        Printf("Timeslot duration, systime: %u\r", TimeslotDuration);
 
         chSysLock();
         RadioTime.StartTimerI();
