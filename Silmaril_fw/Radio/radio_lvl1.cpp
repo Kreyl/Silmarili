@@ -32,74 +32,54 @@ cc1101_t CC(CC_Setup0);
 
 rLevel1_t Radio;
 void TmrTimeslotCallback(void *p);
-//static volatile enum CCState_t {ccstIdle, ccstRx, ccstTx} CCState = ccstIdle;
-static bool InsideTx = false;
 extern uint8_t SignalTx;
 
-static Timer_t SyncTmr(TIM9);
-#define TICS_TOTAL  (TIMESLOT_DURATION_TICS * TIMESLOT_CNT * RCYCLE_CNT)
+void TmrTxStartCallback(void *p);
+void TmrCycleCallback(void *p);
 
 static class RadioTime_t {
+private:
+    virtual_timer_t TmrTxStart, TmrCycle;
+    uint32_t Cycle = 0;
 public:
-    void Adjust(rPkt_t &Pkt) {
-        if(Pkt.ID < ID) {
-            chSysLock();
-            uint32_t AlienTime = Pkt.Time + 27;
-            PrintfI("%u; %u; %u; %u\r", Pkt.ID, Pkt.Time, AlienTime, SyncTmr.GetCounter());
-            SyncTmr.SetCounter(AlienTime);
-            chSysUnlock();
-        }
-    }
-
-    void OnNewSupercycleI() {
-        if(ID == 0) {
-            InsideTx = true;
+    void OnNewCycleI() {
+        Cycle++;
+        if(Cycle >= RCYCLE_CNT) Cycle = 0;
+        // Start Cycle timer
+        chVTSetI(&TmrCycle, (TIMESLOT_CNT * TIMESLOT_DURATION_ST), TmrCycleCallback, nullptr);
+        // Generate TX slot
+        uint32_t TxSlot = rand() % (TIMESLOT_CNT - 1); // Do not use last timeslot
+        if(TxSlot == 0) {    // Tx now
             Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
-            uint32_t NextTime = TIMESLOT_DURATION_TICS;
-            SyncTmr.SetCCR1(NextTime); // Will fire at end of TX timeslot
         }
         else {
-            SyncTmr.SetCCR1(TIMESLOT_DURATION_TICS * ID); // Will fire at start of TX timeslot
+            // Enter RX or sleep depending on cycle number
+            if(Cycle == 0) Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
+            else Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToSleep));
+            // Prepare to TX
+            chVTSetI(&TmrTxStart, (TxSlot * TIMESLOT_DURATION_ST), TmrTxStartCallback, nullptr);
         }
     }
 
-    void OnCompareI(uint32_t CurrentTick) {
-        if(InsideTx) { // End of TX slot
-            InsideTx = false;
-            uint32_t NextTime = CurrentTick + (TIMESLOT_CNT - 1) * TIMESLOT_DURATION_TICS;
-            // Do not setup new TX slot if too close to end of supercycle
-            if(NextTime < (TICS_TOTAL - TIMESLOT_DURATION_TICS)) SyncTmr.SetCCR1(NextTime); // Will fire at start of TX timeslot
-            if(CurrentTick < (TIMESLOT_CNT * TIMESLOT_DURATION_TICS)) { // Zero cycle
-                Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
-            }
-            else { // Non-zero cycle
-                Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToSleep));
-            }
-        }
-        else { // Start of TX slot
-            InsideTx = true;
-            uint32_t NextTime = CurrentTick + TIMESLOT_DURATION_TICS;
-            SyncTmr.SetCCR1(NextTime); // Will fire at end of TX timeslot
-            Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
-        }
+    void OnTxStartI() {
+        Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
+    }
+
+    void OnTxEndI() {
+        if(Cycle == 0) Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
+        else Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToSleep));
     }
 } RadioTime;
 
-// SyncTimer IRQ
-extern "C"
-void VectorA4() {
-    CH_IRQ_PROLOGUE();
+void TmrTxStartCallback(void *p) {
     chSysLockFromISR();
-    if(SyncTmr.IsUpdateIrqFired()) {
-        SyncTmr.ClearUpdateIrqPendingBit();
-        RadioTime.OnNewSupercycleI();
-    }
-    if(SyncTmr.IsCompare1IrqFired()) {
-        SyncTmr.ClearCompare1IrqPendingBit();
-        RadioTime.OnCompareI(SyncTmr.GetCounter());
-    }
+    RadioTime.OnTxStartI();
     chSysUnlockFromISR();
-    CH_IRQ_EPILOGUE();
+}
+void TmrCycleCallback(void *p) {
+    chSysLockFromISR();
+    RadioTime.OnNewCycleI();
+    chSysUnlockFromISR();
 }
 
 void RxCallback() {
@@ -124,14 +104,16 @@ void rLevel1_t::ITask() {
 //                Printf("Tttx\r");
                 DBG2_CLR();
                 PktTx.ID = ID;
-                PktTx.Time = SyncTmr.GetCounter();
-                PktTx.TimeSrcID = RadioTime.TimeSrcID;
                 PktTx.Signal = SignalTx;
 //                PktTx.Print();
                 DBG1_SET();
                 CC.Recalibrate();
                 CC.Transmit(&PktTx, RPKT_LEN);
                 DBG1_CLR();
+                // Tx done
+                chSysLock();
+                RadioTime.OnTxEndI();
+                chSysUnlock();
                 break;
 
             case rmsgTimeToRx:
@@ -142,15 +124,14 @@ void rLevel1_t::ITask() {
 
             case rmsgTimeToSleep:
                 DBG2_CLR();
-                CC.EnterIdle();
+                CC.EnterPwrDown();
                 break;
 
             case rmsgPktRx:
                 DBG2_CLR();
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
-//                    Printf("%d; ", Rssi);
-//                    PktRx.Print();
-                    RadioTime.Adjust(PktRx);
+                    Printf("%d; ", Rssi);
+                    PktRx.Print();
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
                 CC.ReceiveAsync(RxCallback);
@@ -159,9 +140,7 @@ void rLevel1_t::ITask() {
 
             case rmsgSetPwr: CC.SetTxPower(msg.Value); break;
 
-            case rmsgSetChnl:
-//                CC.SetChannel(msg.Value);
-                break;
+            case rmsgSetChnl: CC.SetChannel(msg.Value); break;
         } // switch
     } // while
 }
@@ -181,19 +160,12 @@ uint8_t rLevel1_t::Init() {
         CC.SetPktSize(RPKT_LEN);
         CC.SetChannel(RCHNL);
 
-        SyncTmr.Init();
-        SyncTmr.SetupPrescaler(10000); // 10kHz => 10 tics in 1 ms
-        // Total amount of timeslots in supercycle
-        SyncTmr.SetTopValue(TICS_TOTAL);
-        // Irq
-        SyncTmr.EnableIrqOnUpdate();
-        SyncTmr.EnableIrqOnCompare1();
-        SyncTmr.EnableIrq(TIM9_IRQn, IRQ_PRIO_MEDIUM);
-        SyncTmr.GenerateUpdateEvt();
-
         // Thread
         chThdCreateStatic(warLvl1Thread, sizeof(warLvl1Thread), HIGHPRIO, (tfunc_t)rLvl1Thread, NULL);
-        SyncTmr.Enable();
+        chSysLock();
+        RadioTime.OnNewCycleI();
+        chSchRescheduleS();
+        chSysUnlock();
         return retvOk;
     }
     else return retvFail;

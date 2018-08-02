@@ -53,6 +53,8 @@ public:
     void SetPktSize(uint8_t ASize) { WriteRegister(CC_PKTLEN, ASize); }
     // State change
     void Transmit(void *Ptr, uint8_t Len);
+    void TransmitWithCCA(void *Ptr, uint8_t Len);
+
     uint8_t Receive(uint32_t Timeout_ms, void *Ptr, uint8_t Len,  int8_t *PRssi=nullptr);
     uint8_t ReceiveLong(uint32_t Timeout_ms, void *Ptr, uint8_t *PLen,  int8_t *PRssi=nullptr);
     uint8_t EnterIdle()    { return WriteStrobe(CC_SIDLE); }

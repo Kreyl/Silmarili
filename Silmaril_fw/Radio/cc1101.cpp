@@ -182,6 +182,10 @@ void cc1101_t::Transmit(void *Ptr, uint8_t Len) {
     }
 }
 
+void cc1101_t::TransmitWithCCA(void *Ptr, uint8_t Len) {
+
+}
+
 // Enter RX mode and wait reception for Timeout_ms.
 uint8_t cc1101_t::Receive(uint32_t Timeout_ms, void *Ptr, uint8_t Len, int8_t *PRssi) {
     FlushRxFIFO();

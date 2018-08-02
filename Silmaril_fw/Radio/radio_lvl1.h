@@ -19,17 +19,14 @@
 union rPkt_t  {
     uint32_t IDWord;
     struct {
-        // Sync data
-        uint8_t ID;
-        uint16_t Time;
-        // Payload
-        uint8_t Signal;
+        uint16_t ID;
+        uint16_t Signal;
     } __packed;
     rPkt_t& operator = (const rPkt_t &Right) {
         IDWord = Right.IDWord;
         return *this;
     }
-    void Print() { Printf("ID: %u; Time: %u;  Signal: %X\r", ID, Time, Signal); }
+    void Print() { Printf("ID: %u; Signal: %X\r", ID, Signal); }
 } __packed;
 
 #define RPKT_LEN    sizeof(rPkt_t)
@@ -38,12 +35,11 @@ union rPkt_t  {
 #if 1 // =================== Channels, cycles, Rssi  ===========================
 #define RCHNL               7
 #define RCYCLE_CNT          4
-#define TIMESLOT_CNT        (ID_MAX - ID_MIN + 1)
+#define TIMESLOT_CNT        18
 #endif
 
 #if 1 // =========================== Timings ===================================
-#define TIMESLOT_DURATION_TICS  54
-#define SCYCLES_TO_KEEP_TIMESRC 4   // After that amount of supercycles, TimeSrcID become self ID
+#define TIMESLOT_DURATION_ST  18
 #endif
 
 #if 1 // ============================= RX Table ================================
