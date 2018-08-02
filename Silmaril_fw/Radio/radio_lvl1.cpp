@@ -46,14 +46,14 @@ public:
     uint16_t TimeSrcID = ID;
     void Adjust(rPkt_t &Pkt) {
         // Adjust time if theirs TimeSrc < Ours TimeSrc
-        if(Pkt.TimeSrcID < TimeSrcID) {
+        if(Pkt.ID < ID) {
             chSysLock();
-            uint32_t AlienTime = Pkt.Time + 20;
+            uint32_t AlienTime = Pkt.Time + 27;
+            PrintfI("%u; %u; %u\r", Pkt.Time, AlienTime, SyncTmr.GetCounter());
             SyncTmr.SetCounter(AlienTime);
-            TimeSrcID = Pkt.ID;
-            TimeSrcTimeout = SCYCLES_TO_KEEP_TIMESRC; // Reset Time Src Timeout
+//            TimeSrcID = Pkt.ID;
+//            TimeSrcTimeout = SCYCLES_TO_KEEP_TIMESRC; // Reset Time Src Timeout
             chSysUnlock();
-////            Printf("New time: ccl %u; slot %u; Src %u\r", CycleN, TimeSlot, TimeSrcId);
         }
     }
 
@@ -140,7 +140,7 @@ void rLevel1_t::ITask() {
                 PktTx.Signal = SignalTx;
 //                PktTx.Print();
                 DBG1_SET();
-                CC.Recalibrate(); // Recalibrate before every TX, do not calibrate before RX
+                CC.Recalibrate();
                 CC.Transmit(&PktTx, RPKT_LEN);
                 DBG1_CLR();
                 break;
@@ -159,10 +159,8 @@ void rLevel1_t::ITask() {
             case rmsgPktRx:
                 DBG2_CLR();
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
-//                    if(PktRx.ID > 9) {
-                        Printf("%d; ", Rssi);
-                        PktRx.Print();
-//                    }
+//                    Printf("%d; ", Rssi);
+//                    PktRx.Print();
                     RadioTime.Adjust(PktRx);
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
