@@ -43,16 +43,15 @@ static class RadioTime_t {
 private:
     uint16_t TimeSrcTimeout = 0;
 public:
-    uint16_t TimeSrcID = ID;
+    uint16_t TimeSrcID;
     void Adjust(rPkt_t &Pkt) {
-        // Adjust time if theirs TimeSrc < Ours TimeSrc
-        if(Pkt.ID < ID) {
+        if((Pkt.TimeSrcID < TimeSrcID) or ((Pkt.TimeSrcID == TimeSrcID) and (Pkt.ID < ID))) {
             chSysLock();
             uint32_t AlienTime = Pkt.Time + 27;
-            PrintfI("%u; %u; %u\r", Pkt.Time, AlienTime, SyncTmr.GetCounter());
+            PrintfI("Src: %u/%u;  %u; %u; %u\r", Pkt.TimeSrcID, TimeSrcID, Pkt.Time, AlienTime, SyncTmr.GetCounter());
             SyncTmr.SetCounter(AlienTime);
-//            TimeSrcID = Pkt.ID;
-//            TimeSrcTimeout = SCYCLES_TO_KEEP_TIMESRC; // Reset Time Src Timeout
+            TimeSrcID = Pkt.ID;
+            TimeSrcTimeout = SCYCLES_TO_KEEP_TIMESRC; // Reset Time Src Timeout
             chSysUnlock();
         }
     }
@@ -63,7 +62,6 @@ public:
             Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
             uint32_t NextTime = TIMESLOT_DURATION_TICS;
             SyncTmr.SetCCR1(NextTime); // Will fire at end of TX timeslot
-//            PrintfI("Upd %u\r", NextTime);
         }
         else {
             SyncTmr.SetCCR1(TIMESLOT_DURATION_TICS * ID); // Will fire at start of TX timeslot
@@ -79,7 +77,6 @@ public:
             uint32_t NextTime = CurrentTick + (TIMESLOT_CNT - 1) * TIMESLOT_DURATION_TICS;
             // Do not setup new TX slot if too close to end of supercycle
             if(NextTime < (TICS_TOTAL - TIMESLOT_DURATION_TICS)) SyncTmr.SetCCR1(NextTime); // Will fire at start of TX timeslot
-//            PrintfI("CmpTxEnd  %u; %u\r", CurrentTick, NextTime);
             if(CurrentTick < (TIMESLOT_CNT * TIMESLOT_DURATION_TICS)) { // Zero cycle
                 Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
             }
@@ -91,7 +88,6 @@ public:
             InsideTx = true;
             uint32_t NextTime = CurrentTick + TIMESLOT_DURATION_TICS;
             SyncTmr.SetCCR1(NextTime); // Will fire at end of TX timeslot
-//            PrintfI("CmpTxStrt %u; %u\r", CurrentTick, NextTime);
             Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
         }
     }
@@ -137,6 +133,7 @@ void rLevel1_t::ITask() {
                 DBG2_CLR();
                 PktTx.ID = ID;
                 PktTx.Time = SyncTmr.GetCounter();
+                PktTx.TimeSrcID = RadioTime.TimeSrcID;
                 PktTx.Signal = SignalTx;
 //                PktTx.Print();
                 DBG1_SET();
@@ -161,6 +158,7 @@ void rLevel1_t::ITask() {
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
 //                    Printf("%d; ", Rssi);
 //                    PktRx.Print();
+//                    LocalTable.AddOrReplaceExistingPkt(PktRx);
                     RadioTime.Adjust(PktRx);
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
@@ -191,12 +189,6 @@ uint8_t rLevel1_t::Init() {
         CC.SetTxPower(CC_PwrMinus30dBm);
         CC.SetPktSize(RPKT_LEN);
         CC.SetChannel(RCHNL);
-        // Measure timeslot duration
-//        systime_t TimeStart = chVTGetSystemTimeX();
-//        CC.Recalibrate();
-//        CC.Transmit(&PktTx, RPKT_LEN);
-//        systime_t TimeslotDuration = chVTTimeElapsedSinceX(TimeStart);
-//        Printf("Timeslot duration, systime: %u\r", TimeslotDuration);
 
         SyncTmr.Init();
         SyncTmr.SetupPrescaler(10000); // 10kHz => 10 tics in 1 ms
@@ -207,11 +199,6 @@ uint8_t rLevel1_t::Init() {
         SyncTmr.EnableIrqOnCompare1();
         SyncTmr.EnableIrq(TIM9_IRQn, IRQ_PRIO_MEDIUM);
         SyncTmr.GenerateUpdateEvt();
-
-//        chSysLock();
-//        RadioTime.StartTimerI();
-//        RadioTime.TimeSrcId = ID;
-//        chSysUnlock();
 
         // Thread
         chThdCreateStatic(warLvl1Thread, sizeof(warLvl1Thread), HIGHPRIO, (tfunc_t)rLvl1Thread, NULL);

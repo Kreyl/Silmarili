@@ -110,6 +110,8 @@ struct RMsg_t {
 
 
 class rLevel1_t {
+private:
+//    RxTable_t LocalTable;
 public:
     int8_t Rssi;
     rPkt_t PktTx, PktRx;
