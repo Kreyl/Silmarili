@@ -40,18 +40,13 @@ static Timer_t SyncTmr(TIM9);
 #define TICS_TOTAL  (TIMESLOT_DURATION_TICS * TIMESLOT_CNT * RCYCLE_CNT)
 
 static class RadioTime_t {
-private:
-    uint16_t TimeSrcTimeout = 0;
 public:
-    uint16_t TimeSrcID;
     void Adjust(rPkt_t &Pkt) {
-        if((Pkt.TimeSrcID < TimeSrcID) or ((Pkt.TimeSrcID == TimeSrcID) and (Pkt.ID < ID))) {
+        if(Pkt.ID < ID) {
             chSysLock();
             uint32_t AlienTime = Pkt.Time + 27;
-            PrintfI("Src: %u/%u;  %u; %u; %u\r", Pkt.TimeSrcID, TimeSrcID, Pkt.Time, AlienTime, SyncTmr.GetCounter());
+            PrintfI("%u; %u; %u; %u\r", Pkt.ID, Pkt.Time, AlienTime, SyncTmr.GetCounter());
             SyncTmr.SetCounter(AlienTime);
-            TimeSrcID = Pkt.ID;
-            TimeSrcTimeout = SCYCLES_TO_KEEP_TIMESRC; // Reset Time Src Timeout
             chSysUnlock();
         }
     }
@@ -66,9 +61,6 @@ public:
         else {
             SyncTmr.SetCCR1(TIMESLOT_DURATION_TICS * ID); // Will fire at start of TX timeslot
         }
-        // Process TimeSrc
-        if(TimeSrcTimeout > 0) TimeSrcTimeout--;
-        else TimeSrcID = ID;
     }
 
     void OnCompareI(uint32_t CurrentTick) {
@@ -158,7 +150,6 @@ void rLevel1_t::ITask() {
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
 //                    Printf("%d; ", Rssi);
 //                    PktRx.Print();
-//                    LocalTable.AddOrReplaceExistingPkt(PktRx);
                     RadioTime.Adjust(PktRx);
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }

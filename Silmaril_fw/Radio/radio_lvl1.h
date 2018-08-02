@@ -17,21 +17,16 @@
 
 #if 1 // =========================== Pkt_t =====================================
 union rPkt_t  {
-    struct {
-        uint32_t IDWord;
-        uint8_t IByte;
-    };
+    uint32_t IDWord;
     struct {
         // Sync data
         uint8_t ID;
         uint16_t Time;
-        uint8_t TimeSrcID;
         // Payload
         uint8_t Signal;
     } __packed;
     rPkt_t& operator = (const rPkt_t &Right) {
         IDWord = Right.IDWord;
-        IByte = Right.IByte;
         return *this;
     }
     void Print() { Printf("ID: %u; Time: %u;  Signal: %X\r", ID, Time, Signal); }
@@ -110,8 +105,6 @@ struct RMsg_t {
 
 
 class rLevel1_t {
-private:
-//    RxTable_t LocalTable;
 public:
     int8_t Rssi;
     rPkt_t PktTx, PktRx;
