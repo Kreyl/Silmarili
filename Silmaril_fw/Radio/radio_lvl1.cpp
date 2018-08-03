@@ -12,7 +12,7 @@
 
 cc1101_t CC(CC_Setup0);
 
-#define DBG_PINS
+//#define DBG_PINS
 
 #ifdef DBG_PINS
 #define DBG_GPIO1   GPIOA
@@ -138,7 +138,7 @@ void rLevel1_t::ITask() {
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
 //                    Printf("%d; ", Rssi);
 //                    PktRx.Print();
-                    RxTable.AddOrReplaceExistingPkt(PktRx);
+                    if(Rssi > - 87 and PktRx.ID <= ID_MAX) RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
                 chSysLock();
                 RadioTime.OnTxRxEndI();
