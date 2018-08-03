@@ -65,7 +65,7 @@ public:
         Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToTx)); // Enter TX
     }
 
-    void OnTxEndI() {
+    void OnTxRxEndI() {
         if(Cycle == 0) Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToRx)); // Enter RX
         else Radio.RMsgQ.SendNowOrExitI(RMsg_t(rmsgTimeToSleep));
     }
@@ -118,7 +118,7 @@ void rLevel1_t::ITask() {
                 DBG1_CLR();
                 // Tx done
                 chSysLock();
-                RadioTime.OnTxEndI();
+                RadioTime.OnTxRxEndI();
                 chSysUnlock();
                 break;
 
@@ -140,8 +140,9 @@ void rLevel1_t::ITask() {
 //                    PktRx.Print();
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
-                CC.ReceiveAsync(RxCallback);
-                DBG2_SET();
+                chSysLock();
+                RadioTime.OnTxRxEndI();
+                chSysUnlock();
                 break;
 
             case rmsgSetPwr: CC.SetTxPower(msg.Value); break;

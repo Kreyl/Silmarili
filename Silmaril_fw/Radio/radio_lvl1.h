@@ -35,7 +35,7 @@ union rPkt_t  {
 #if 1 // =================== Channels, cycles, Rssi  ===========================
 #define RCHNL               7
 #define RCYCLE_CNT          4
-#define TIMESLOT_CNT        18
+#define TIMESLOT_CNT        180
 #endif
 
 #if 1 // =========================== Timings ===================================

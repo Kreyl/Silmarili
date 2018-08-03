@@ -142,13 +142,14 @@ void ITask() {
 
 void CheckRxTable() {
     uint32_t Cnt = Radio.RxTable.GetCount();
+//    Printf("TableCnt: %u\r", Cnt);
     uint8_t OatherCnt = 0;
     if(Cnt > 0) {
         // Analyze RxTable
         for(uint32_t i=0; i<Cnt; i++) {
             if(Radio.RxTable.Buf[i].Signal & SIGN_OATH) {
                 OatherCnt++;
-                if(OatherCnt == 3) break; // Stop if
+                if(OatherCnt == 3) break; // Stop if enough oathers
             }
         }
         Radio.RxTable.Clear();
