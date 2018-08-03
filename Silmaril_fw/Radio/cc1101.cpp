@@ -145,10 +145,11 @@ uint8_t cc1101_t::FlushTxFIFO() {
 void cc1101_t::Transmit(void *Ptr, uint8_t Len) {
     ICallback = nullptr;
 //     WaitUntilChannelIsBusy();   // If this is not done, time after time FIFO is destroyed
-    EnterTX();
+
     if(Len < 64) {
         chSysLock();
         WriteTX((uint8_t*)Ptr, Len);
+        EnterTX();
         chThdSuspendS(&ThdRef); // Wait IRQ
         chSysUnlock();          // Will be here when IRQ fires
     }
@@ -162,6 +163,7 @@ void cc1101_t::Transmit(void *Ptr, uint8_t Len) {
             Len -= BytesToWrite;
             if(Len == 0) break;
             if(FirstTime) { // Change IO purpose once
+                EnterTX();
                 WriteRegister(CC_IOCFG0, 0x02); // Asserts when the TX FIFO is filled at or above the TX FIFO threshold. De-asserts when the TX FIFO is below the same threshold.
                 FirstTime = false;
             }
@@ -182,8 +184,22 @@ void cc1101_t::Transmit(void *Ptr, uint8_t Len) {
     }
 }
 
-void cc1101_t::TransmitWithCCA(void *Ptr, uint8_t Len) {
-
+uint8_t cc1101_t::TransmitWithCCA(void *Ptr, uint8_t Len, int16_t RssiThreshold) {
+    EnterRX();
+    chThdSleep(5); // Allow it to enter RX
+    // Read RSSI
+    uint8_t rawrssi;
+    ReadRegister(CC_RSSI, &rawrssi);
+    int16_t rssi = RSSI_dBm(rawrssi);
+    if(rssi < RssiThreshold) {
+        Transmit(Ptr, Len);
+        return retvOk;
+    }
+    else {
+//        Printf("raw: %03u; r: %03d\r", rawrssi, rssi);
+        EnterIdle();
+        return retvBusy;
+    }
 }
 
 // Enter RX mode and wait reception for Timeout_ms.
@@ -285,7 +301,7 @@ uint8_t cc1101_t::ReceiveLong(uint32_t Timeout_ms, void *Ptr, uint8_t *PLen, int
 }
 
 // Return RSSI in dBm
-int8_t cc1101_t::RSSI_dBm(uint8_t ARawRSSI) {
+int16_t cc1101_t::RSSI_dBm(uint8_t ARawRSSI) {
     int16_t RSSI = ARawRSSI;
     if (RSSI >= 128) RSSI -= 256;
     RSSI = (RSSI / 2) - 74;    // now it is in dBm

@@ -101,14 +101,20 @@ void rLevel1_t::ITask() {
         RMsg_t msg = RMsgQ.Fetch(TIME_INFINITE);
         switch(msg.Cmd) {
             case rmsgTimeToTx:
-//                Printf("Tttx\r");
                 DBG2_CLR();
                 PktTx.ID = ID;
                 PktTx.Signal = SignalTx;
 //                PktTx.Print();
                 DBG1_SET();
                 CC.Recalibrate();
-                CC.Transmit(&PktTx, RPKT_LEN);
+//                CC.Transmit(&PktTx, RPKT_LEN);
+                for(uint32_t N=0; N<4; N++) {
+                    if(CC.TransmitWithCCA(&PktTx, RPKT_LEN, -81) == retvOk) {
+//                        if(N!=0) Printf("N=%u\r", N);
+                        break;
+                    }
+                    chThdSleep(TIMESLOT_DURATION_ST / 2);
+                }
                 DBG1_CLR();
                 // Tx done
                 chSysLock();
@@ -130,8 +136,8 @@ void rLevel1_t::ITask() {
             case rmsgPktRx:
                 DBG2_CLR();
                 if(CC.ReadFIFO(&PktRx, &Rssi, RPKT_LEN) == retvOk) {  // if pkt successfully received
-                    Printf("%d; ", Rssi);
-                    PktRx.Print();
+//                    Printf("%d; ", Rssi);
+//                    PktRx.Print();
                     RxTable.AddOrReplaceExistingPkt(PktRx);
                 }
                 CC.ReceiveAsync(RxCallback);
@@ -156,7 +162,7 @@ uint8_t rLevel1_t::Init() {
 
     RMsgQ.Init();
     if(CC.Init() == retvOk) {
-        CC.SetTxPower(CC_PwrMinus30dBm);
+        CC.SetTxPower(CC_Pwr0dBm);
         CC.SetPktSize(RPKT_LEN);
         CC.SetChannel(RCHNL);
 
