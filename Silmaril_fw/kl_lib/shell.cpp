@@ -70,7 +70,7 @@ char* PrintfToBuf(char* PBuf, const char *format, ...) {
     return PtB.S;
 }
 
-
+#if 0
 void ByteShell_t::Reply(uint8_t CmdCode, uint32_t Len, uint8_t *PData) {
 //    Printf("BSendCmd %X; %u; %A\r", CmdCode, Len, PData, Len, ' ');
     // Send StartOfCmd
@@ -88,6 +88,7 @@ void ByteShell_t::Reply(uint8_t CmdCode, uint32_t Len, uint8_t *PData) {
     if(IPutChar('\n') != retvOk) return;
     IStartTransmissionIfNotYet();
 }
+#endif
 
 #if PRINTF_FLOAT_EN
 #define FLOAT_PRECISION     9

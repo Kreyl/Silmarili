@@ -1,7 +1,7 @@
 /*
  * Sequences.h
  *
- *  Created on: 09 ÿíâ. 2015 ã.
+ *  Created on: 09 ï¿½ï¿½ï¿½. 2015 ï¿½.
  *      Author: Kreyl
  */
 
@@ -273,7 +273,7 @@ const LedRGBChunk_t lsqPlayer[] = {
 
 #if 1 // =========================== LED Smooth ================================
 #define LED_TOP_BRT     255
-#define LED_DIM_BRT     72
+#define LED_DIM_BRT     45
 
 const LedSmoothChunk_t lsqTop[] = {
         {csSetup, 1530, LED_TOP_BRT},
@@ -285,9 +285,9 @@ const LedSmoothChunk_t lsqDim[] = {
         {csEnd}
 };
 
-const LedSmoothChunk_t lsqOathIsNear[] = {
-        {csSetup, 720, LED_TOP_BRT},
-        {csSetup, 720, LED_DIM_BRT},
+const LedSmoothChunk_t lsqMagicIsNear[] = {
+        {csSetup, 2700, 180},
+        {csSetup, 2700, 45},
         {csGoto, 0}
 };
 

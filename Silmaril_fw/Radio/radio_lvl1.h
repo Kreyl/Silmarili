@@ -13,100 +13,130 @@
 #include "kl_buf.h"
 #include "uart.h"
 #include "MsgQ.h"
-#include "main.h"
+
+__unused
+static const uint8_t PwrTable[12] = {
+        CC_PwrMinus30dBm, // 0
+        CC_PwrMinus27dBm, // 1
+        CC_PwrMinus25dBm, // 2
+        CC_PwrMinus20dBm, // 3
+        CC_PwrMinus15dBm, // 4
+        CC_PwrMinus10dBm, // 5
+        CC_PwrMinus6dBm,  // 6
+        CC_Pwr0dBm,       // 7
+        CC_PwrPlus5dBm,   // 8
+        CC_PwrPlus7dBm,   // 9
+        CC_PwrPlus10dBm,  // 10
+        CC_PwrPlus12dBm   // 11
+};
 
 #if 1 // =========================== Pkt_t =====================================
-union rPkt_t  {
-    uint32_t IDWord;
+union rPkt_t {
+    uint32_t DW32[2];
     struct {
-        uint16_t ID;
-        uint16_t Signal;
-    } __packed;
+        uint8_t ID; // Required to distinct packets from same src
+        uint8_t TimeSrc;
+        uint8_t HopCnt;
+        uint16_t iTime;
+        // Payload
+        uint8_t Type;
+        int8_t Rssi; // Will be set after RX. Transmitting is useless, but who cares.
+        uint8_t Salt;
+    } __attribute__((__packed__));
     rPkt_t& operator = (const rPkt_t &Right) {
-        IDWord = Right.IDWord;
+        DW32[0] = Right.DW32[0];
+        DW32[1] = Right.DW32[1];
         return *this;
     }
-    void Print() { Printf("ID: %u; Signal: %X\r", ID, Signal); }
-} __packed;
+} __attribute__ ((__packed__));
+#endif
 
 #define RPKT_LEN    sizeof(rPkt_t)
-#endif
+#define RPKT_SALT   0xCA
 
 #if 1 // =================== Channels, cycles, Rssi  ===========================
-#define RCHNL               7
-#define RCYCLE_CNT          4
-#define TIMESLOT_CNT        180
-#endif
+#define RCHNL_EACH_OTH      2
 
-#if 1 // =========================== Timings ===================================
-#define TIMESLOT_DURATION_ST  18
+#define RX_DURATION_MS      108
+#define SLEEP_DURATION_MS   630
+
 #endif
 
 #if 1 // ============================= RX Table ================================
-#define RXTABLE_SZ              50
+struct rPayload_t {
+    uint8_t IsValid = 0;
+    uint8_t Type;
+} __attribute__ ((__packed__));
+
+#define RXTABLE_SZ          104
+
+// RxTable must be cleared during processing
 class RxTable_t {
 private:
-    uint32_t Cnt = 0;
+    rPayload_t IBuf[RXTABLE_SZ];
 public:
-    rPkt_t Buf[RXTABLE_SZ];
-    void AddOrReplaceExistingPkt(rPkt_t &APkt) {
-        for(uint32_t i=0; i<Cnt; i++) {
-            if(Buf[i].ID == APkt.ID) {
-                Buf[i] = APkt; // Replace with newer pkt
-                return;
+    void AddOrReplaceExistingPkt(rPkt_t *APkt) {
+        chSysLock();
+        AddOrReplaceExistingPktI(APkt);
+        chSysUnlock();
+    }
+    void AddOrReplaceExistingPktI(rPkt_t *pPkt) {
+        if(pPkt->ID < RXTABLE_SZ) {
+            IBuf[pPkt->ID].Type = pPkt->Type;
+            IBuf[pPkt->ID].IsValid = 1;
+        }
+    }
+
+    rPayload_t& operator[](const int32_t Indx) {
+        return IBuf[Indx];
+    }
+
+    void ProcessCountingDistinctTypes(uint32_t *TypeTable, uint8_t TableSz) {
+        for(auto &Payload : IBuf) {
+            if(Payload.IsValid and Payload.Type < TableSz) {
+                TypeTable[Payload.Type]++;
+                Payload.IsValid = 0; // Clear item for future use
             }
         }
-        if(Cnt >= RXTABLE_SZ) return;   // Buffer is full, nothing to do here
-        Buf[Cnt] = APkt;
-        Cnt++;
     }
-
-    uint8_t GetPktByID(uint8_t ID, rPkt_t **ptr) {
-        for(uint32_t i=0; i<Cnt; i++) {
-            if(Buf[i].ID == ID) {
-                *ptr = &Buf[i];
-                return retvOk;
-            }
-        }
-        return retvFail;
-    }
-
-    bool IDPresents(uint8_t ID) {
-        for(uint32_t i=0; i<Cnt; i++) {
-            if(Buf[i].ID == ID) return true;
-        }
-        return false;
-    }
-
-    uint32_t GetCount() { return Cnt; }
-    void Clear() { Cnt = 0; }
 
     void Print() {
-        Printf("RxTable Cnt: %u\r", Cnt);
-        for(uint32_t i=0; i<Cnt; i++) Buf[i].Print();
+        Printf("RxTable\r");
+        for(uint32_t i=0; i<RXTABLE_SZ; i++) {
+            if(IBuf[i].IsValid) Printf("ID: %u; Type: %u\r", i, IBuf[i].Type);
+        }
     }
 };
 #endif
 
-// Message queue
-#define R_MSGQ_LEN      9
-enum RmsgId_t { rmsgSetPwr, rmsgSetChnl, rmsgTimeToRx, rmsgTimeToTx, rmsgTimeToSleep, rmsgPktRx };
-struct RMsg_t {
-    RmsgId_t Cmd;
-    uint8_t Value;
-    RMsg_t() : Cmd(rmsgSetPwr), Value(0) {}
-    RMsg_t(RmsgId_t ACmd) : Cmd(ACmd), Value(0) {}
-    RMsg_t(RmsgId_t ACmd, uint8_t AValue) : Cmd(ACmd), Value(AValue) {}
-} __attribute__((packed));
-
-
 class rLevel1_t {
+private:
+    RxTable_t RxTable1, RxTable2, *RxTableW = &RxTable1;
+    bool Enabled = true;
 public:
-    int8_t Rssi;
-    rPkt_t PktTx, PktRx;
-    EvtMsgQ_t<RMsg_t, R_MSGQ_LEN> RMsgQ;
-    RxTable_t RxTable;
+    uint8_t TxPower;
+
+    void AddPktToRxTableI(rPkt_t *pPkt) { RxTableW->AddOrReplaceExistingPktI(pPkt); }
+
+    RxTable_t* GetRxTable() {
+        chSysLock();
+        RxTable_t* RxTableR;
+        // Switch tables
+        if(RxTableW == &RxTable1) {
+            RxTableW = &RxTable2;
+            RxTableR = &RxTable1;
+        }
+        else {
+            RxTableW = &RxTable1;
+            RxTableR = &RxTable2;
+        }
+        chSysUnlock();
+        return RxTableR;
+    }
+
     uint8_t Init();
+    void Stop();
+
     // Inner use
     void ITask();
 };

@@ -1,7 +1,7 @@
 /*
  * EvtMsg.h
  *
- *  Created on: 21 апр. 2017 г.
+ *  Created on: 21 пїЅпїЅпїЅ. 2017 пїЅ.
  *      Author: Kreyl
  */
 
@@ -57,21 +57,22 @@ union EvtMsg_t {
                 int32_t Value;
                 uint8_t ValueID;
             } __attribute__((__packed__));
-            uint8_t b[EMSG_DATA8_CNT];
-            uint16_t w16[EMSG_DATA16_CNT];
+//            uint8_t b[EMSG_DATA8_CNT];
+//            uint16_t w16[EMSG_DATA16_CNT];
 #if BUTTONS_ENABLED
             BtnEvtInfo_t BtnEvtInfo;
 #endif
         } __attribute__((__packed__));
         uint8_t ID;
     } __attribute__((__packed__));
+
     EvtMsg_t& operator = (const EvtMsg_t &Right) {
         DWord[0] = Right.DWord[0];
         DWord[1] = Right.DWord[1];
         return *this;
     }
     EvtMsg_t() : Ptr(nullptr), ID(0) {}
-    EvtMsg_t(uint8_t AID) : ID(AID) {}
+    EvtMsg_t(uint8_t AID) : Ptr(nullptr), ID(AID) {}
     EvtMsg_t(uint8_t AID, void *APtr) : Ptr(APtr), ID(AID) {}
     EvtMsg_t(uint8_t AID, int32_t AValue) : Value(AValue), ID(AID) {}
     EvtMsg_t(uint8_t AID, uint8_t AValueID, int32_t AValue) : Value(AValue), ValueID(AValueID), ID(AID) {}
@@ -81,12 +82,18 @@ union EvtMsg_t {
 template<typename T, uint32_t Sz>
 class EvtMsgQ_t {
 private:
-    T IBuf[Sz];
-    T *ReadPtr = IBuf, *WritePtr = IBuf;
+    union {
+        uint64_t __Align;
+        T IBuf[Sz];
+    };
+    T *ReadPtr, *WritePtr;
     semaphore_t FullSem;    // Full counter
     semaphore_t EmptySem;   // Empty counter
 public:
+    EvtMsgQ_t() : __Align(0), ReadPtr(IBuf), WritePtr(IBuf) {}
     void Init() {
+        ReadPtr = IBuf;
+        WritePtr = IBuf;
         chSemObjectInit(&EmptySem, Sz);
         chSemObjectInit(&FullSem, (cnt_t)0);
     }
@@ -94,7 +101,7 @@ public:
     /* Retrieves a message from a mailbox, returns zero Msg if failed.
      * The invoking thread waits until a message is posted in the mailbox
      * for a timeout (may be TIME_INFINITE or TIME_IMMEDIATE */
-    T Fetch(systime_t Timeout) {
+    T Fetch(sysinterval_t Timeout) {
         T Msg;
         *(uint8_t*)&Msg = 0;    // Init it with zero somehow
         chSysLock();

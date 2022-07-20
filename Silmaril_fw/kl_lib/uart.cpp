@@ -22,12 +22,8 @@
 #error "Not defined"
 #endif
 
-// Universal VirtualTimer callback
-void UartCallback(void *p) {
-    chSysLockFromISR();
-    ((BaseUart_t*)p)->IIrqHandler();
-    chSysUnlockFromISR();
-}
+// Array of utilized UARTs to organize RX
+static BaseUart_t* PUarts[UARTS_CNT];
 #endif // Common and eternal
 
 #if 1 // ========================= Base UART ===================================
@@ -165,8 +161,6 @@ void Vector15C() {   // USART6
 }
 
 } // extern C
-
-
 #endif
 
 #if UART_USE_DMA
@@ -176,7 +170,7 @@ void DmaUartTxIrq(void *p, uint32_t flags) { ((BaseUart_t*)p)->IRQDmaTxHandler()
 
 // ==== TX DMA IRQ ====
 void BaseUart_t::IRQDmaTxHandler() {
-    dmaStreamDisable(Params->PDmaTx);    // Registers may be changed only when stream is disabled
+    dmaStreamDisable(PDmaTx);    // Registers may be changed only when stream is disabled
     IFullSlotsCount -= ITransSize;
     PRead += ITransSize;
     if(PRead >= (TXBuf + UART_TXBUF_SZ)) PRead = TXBuf; // Circulate pointer
@@ -193,10 +187,10 @@ void BaseUart_t::ISendViaDMA() {
     ITransSize = MIN_(IFullSlotsCount, PartSz);
     if(ITransSize != 0) {
         IDmaIsIdle = false;
-        dmaStreamSetMemory0(Params->PDmaTx, PRead);
-        dmaStreamSetTransactionSize(Params->PDmaTx, ITransSize);
-        dmaStreamSetMode(Params->PDmaTx, Params->DmaModeTx);
-        dmaStreamEnable(Params->PDmaTx);
+        dmaStreamSetMemory0(PDmaTx, PRead);
+        dmaStreamSetTransactionSize(PDmaTx, ITransSize);
+        dmaStreamSetMode(PDmaTx, Params->DmaModeTx);
+        dmaStreamEnable(PDmaTx);
     }
 }
 
@@ -233,24 +227,34 @@ uint8_t BaseUart_t::IPutByteNow(uint8_t b) {
 #endif // TX
 
 #if 1 // ==== RX ====
-uint32_t BaseUart_t::GetRcvdBytesCnt() {
-#if defined STM32F2XX || defined STM32F4XX
-    int32_t WIndx = UART_RXBUF_SZ - Params->PDmaRx->stream->NDTR;
-#else
-    int32_t WIndx = UART_RXBUF_SZ - Params->PDmaRx->channel->CNDTR;
-#endif
-    int32_t Rslt = WIndx - RIndx;
-    if(Rslt < 0) Rslt += UART_RXBUF_SZ;
-    return Rslt;
+static thread_reference_t RXThread = nullptr;
+static THD_WORKING_AREA(waUartRxThread, 128);
+
+__noreturn
+static void UartRxThread(void *arg) {
+    chRegSetThreadName("UartRx");
+    while(true) {
+        chThdSleepMilliseconds(UART_RX_POLLING_MS);
+        // Iterate UARTs
+        for(BaseUart_t* ptr : PUarts) {
+            if(ptr != nullptr) ptr->ProcessByteIfReceived();
+        } // for
+    } // while true
 }
 
 uint8_t BaseUart_t::GetByte(uint8_t *b) {
-    if(GetRcvdBytesCnt() == 0) return retvEmpty;
+#if defined STM32F2XX || defined STM32F4XX
+    int32_t WIndx = UART_RXBUF_SZ - Params->PDmaRx->stream->NDTR;
+#else
+    int32_t WIndx = UART_RXBUF_SZ - PDmaRx->channel->CNDTR;
+#endif
+    int32_t BytesCnt = WIndx - RIndx;
+    if(BytesCnt < 0) BytesCnt += UART_RXBUF_SZ;
+    if(BytesCnt == 0) return retvEmpty;
     *b = IRxBuf[RIndx++];
     if(RIndx >= UART_RXBUF_SZ) RIndx = 0;
     return retvOk;
 }
-
 #endif // RX
 
 #if 1 // ==== Init ====
@@ -306,8 +310,12 @@ void BaseUart_t::Init() {
         if     (Params->Uart == USART1) RCC->CCIPR |= 0b10;
         else if(Params->Uart == USART2) RCC->CCIPR |= 0b10 << 2;
         else if(Params->Uart == USART3) RCC->CCIPR |= 0b10 << 4;
+#ifdef UART4
         else if(Params->Uart == UART4)  RCC->CCIPR |= 0b10 << 6;
+#endif
+#ifdef UART5
         else if(Params->Uart == UART5)  RCC->CCIPR |= 0b10 << 8;
+#endif
     }
 #endif
     OnClkChange();  // Setup baudrate
@@ -318,9 +326,9 @@ void BaseUart_t::Init() {
 #if defined STM32F0XX
     if(Params->PDmaTx == STM32_DMA1_STREAM4) SYSCFG->CFGR1 |= SYSCFG_CFGR1_USART1TX_DMA_RMP;
 #endif
-    dmaStreamAllocate     (Params->PDmaTx, IRQ_PRIO_MEDIUM, DmaUartTxIrq, this);
-    dmaStreamSetPeripheral(Params->PDmaTx, &Params->Uart->UART_TX_REG);
-    dmaStreamSetMode      (Params->PDmaTx, Params->DmaModeTx);
+    PDmaTx = dmaStreamAlloc(Params->DmaTxID, IRQ_PRIO_MEDIUM, DmaUartTxIrq, this);
+    dmaStreamSetPeripheral(PDmaTx, &Params->Uart->UART_TX_REG);
+    dmaStreamSetMode      (PDmaTx, Params->DmaModeTx);
     IDmaIsIdle = true;
 #endif
 
@@ -357,21 +365,32 @@ void BaseUart_t::Init() {
     if(Params->PDmaRx == STM32_DMA1_STREAM5) SYSCFG->CFGR1 |= SYSCFG_CFGR1_USART1RX_DMA_RMP;
 #endif
     // DMA
-    dmaStreamAllocate     (Params->PDmaRx, IRQ_PRIO_LOW, nullptr, NULL);
-    dmaStreamSetPeripheral(Params->PDmaRx, &Params->Uart->UART_RX_REG);
-    dmaStreamSetMemory0   (Params->PDmaRx, IRxBuf);
-    dmaStreamSetTransactionSize(Params->PDmaRx, UART_RXBUF_SZ);
-    dmaStreamSetMode      (Params->PDmaRx, Params->DmaModeRx);
-    dmaStreamEnable       (Params->PDmaRx);
+    PDmaRx = dmaStreamAlloc(Params->DmaRxID, IRQ_PRIO_MEDIUM, nullptr, NULL);
+    dmaStreamSetPeripheral(PDmaRx, &Params->Uart->UART_RX_REG);
+    dmaStreamSetMemory0   (PDmaRx, IRxBuf);
+    dmaStreamSetTransactionSize(PDmaRx, UART_RXBUF_SZ);
+    dmaStreamSetMode      (PDmaRx, Params->DmaModeRx);
+    dmaStreamEnable       (PDmaRx);
     Params->Uart->CR1 |= USART_CR1_UE;    // Enable USART
+
+    // Prepare and start RX
+    for(int i=0; i<UARTS_CNT; i++) {
+        if(PUarts[i] == nullptr) {
+            PUarts[i] = this;
+            break;
+        }
+    }
+    if(RXThread == nullptr) {
+        RXThread = chThdCreateStatic(waUartRxThread, sizeof(waUartRxThread), NORMALPRIO, (tfunc_t)UartRxThread, NULL);
+    }
 }
 
 void BaseUart_t::Shutdown() {
     Params->Uart->CR1 &= ~USART_CR1_UE; // UART Disable
-    if     (Params->Uart == USART1) { rccDisableUSART1(FALSE); }
-    else if(Params->Uart == USART2) { rccDisableUSART2(FALSE); }
+    if     (Params->Uart == USART1) { rccDisableUSART1(); }
+    else if(Params->Uart == USART2) { rccDisableUSART2(); }
 #if defined USART3
-    else if(Params->Uart == USART3) { rccDisableUSART3(FALSE); }
+    else if(Params->Uart == USART3) { rccDisableUSART3(); }
 #endif
 #if defined UART4
     else if(Params->Uart == UART4) { rccDisableUART4(FALSE); }
@@ -386,26 +405,22 @@ void BaseUart_t::OnClkChange() {
     if(Params->Uart == USART1) Params->Uart->BRR = Clk.APB2FreqHz / Params->Baudrate;
     else                       Params->Uart->BRR = Clk.APB1FreqHz / Params->Baudrate;
 #elif defined STM32F072xB
-    if(Params->Uart == USART1 or Params->Uart == USART2) Params->Uart->BRR = HSI_FREQ_HZ / IBaudrate;
-    else Params->Uart->BRR = Clk.APBFreqHz / IBaudrate;
+    if(Params->Uart == USART1 or Params->Uart == USART2) Params->Uart->BRR = HSI_FREQ_HZ / Params->Baudrate;
+    else Params->Uart->BRR = Clk.APBFreqHz / Params->Baudrate;
 #elif defined STM32F0XX
     Params->Uart->BRR = Clk.APBFreqHz / IBaudrate;
 #elif defined STM32F2XX || defined STM32F4XX
     if(Params->Uart == USART1 or Params->Uart == USART6) Params->Uart->BRR = Clk.APB2FreqHz / IBaudrate;
     else Params->Uart->BRR = Clk.APB1FreqHz / IBaudrate;
 #elif defined STM32L4XX
-    if(Params->UseIndependedClock) Params->Uart->BRR = HSI_FREQ_HZ / IBaudrate;
+    if(Params->UseIndependedClock) Params->Uart->BRR = HSI_FREQ_HZ / Params->Baudrate;
     else {
-        if(Params->Uart == USART1) Params->Uart->BRR = Clk.APB2FreqHz / IBaudrate;
-        else Params->Uart->BRR = Clk.APB1FreqHz / IBaudrate; // All others at APB1
+        if(Params->Uart == USART1) Params->Uart->BRR = Clk.APB2FreqHz / Params->Baudrate;
+        else Params->Uart->BRR = Clk.APB1FreqHz / Params->Baudrate; // All others at APB1
     }
 #endif
 }
 #endif // Init
-
-void BaseUart_t::StartRx() {
-    chVTSet(&TmrRx, UART_RX_POLLING_MS, UartCallback, this);
-}
 
 void BaseUart_t::SignalRxProcessed() {
     chSysLock();
@@ -416,18 +431,120 @@ void BaseUart_t::SignalRxProcessed() {
 #endif // Base UART
 
 #if 1 // ========================= Cmd UART ====================================
-void CmdUart_t::IIrqHandler() {
-    chVTSetI(&TmrRx, UART_RX_POLLING_MS, UartCallback, this);
+void CmdUart_t::ProcessByteIfReceived() {
     if(!RxProcessed) return;
     uint8_t b;
     while(GetByte(&b) == retvOk) {
         if(Cmd.PutChar(b) == pdrNewCmd) {
             RxProcessed = false;
-            EvtMsg_t Msg(evtIdShellCmd, (Shell_t*)this);
-            EvtQMain.SendNowOrExitI(Msg);
+            EvtQMain.SendNowOrExit(EvtMsg_t(evtIdShellCmd, (Shell_t*)this));
         } // if new cmd
     } // while get byte
 //    PrintfI("e\r");
+}
+#endif
+
+#if 1 // ==== Modbus ====
+ProcessDataResult_t ModbusCmd_t::PutChar(char c) {
+    // Start of cmd
+    if(c == ':') {
+        Started = true;
+        Cnt = 0;
+    }
+    // End of cmd
+    else if((c == '\r') or (c == '\n')) {   // end of line, check if cmd completed
+        Started = false;
+        if(Cnt >= 6) { // if not too short
+            IString[Cnt] = 0; // End of string
+            Cnt = 0;
+            if(Parse() == retvOk) return pdrNewCmd;
+        }
+    }
+    // Some other char
+    else {
+        if(Started) { // Ignore if not
+            // Check if ascii
+            if((c >= '0' and c <= '9') or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f')) {
+                if(Cnt < (CMD_BUF_SZ-1)) IString[Cnt++] = c;  // Add char if buffer not full
+            }
+        }
+    }
+    return pdrProceed;
+}
+
+uint8_t CharToByte(char c, uint8_t *PRslt) {
+    if(c >= '0' and c <= '9') { *PRslt = (c - '0'); return retvOk; }
+    else if(c >= 'A' and c <= 'F') { *PRslt = (0xA + c - 'A'); return retvOk; }
+    else if(c >= 'a' and c <= 'f') { *PRslt = (0xA + c - 'a'); return retvOk; }
+    else return retvFail;
+}
+
+uint8_t TwoCharsToByte(char c1, char c2, uint8_t *PRslt) {
+    uint8_t b1, b2;
+    if(CharToByte(c1, &b1) != retvOk) return retvFail;
+    if(CharToByte(c2, &b2) != retvOk) return retvFail;
+    b1 <<= 4;
+    b1 |= b2;
+    *PRslt = b1;
+    return retvOk;
+}
+
+uint8_t ModbusCmd_t::Parse() {
+    // Addr
+    if(TwoCharsToByte(IString[0], IString[1], &Addr) != retvOk) return retvFail;
+    // Function
+    if(TwoCharsToByte(IString[2], IString[3], &Function) != retvOk) return retvFail;
+    // Data
+    char* p = &IString[4];
+    uint8_t LRC = Addr + Function;
+    DataCnt = 0;
+    while(true) {
+        uint8_t b;
+        if(TwoCharsToByte(p[0], p[1], &b) != retvOk) break; // End of string
+        Data[DataCnt++] = b;
+        LRC += b;
+        p += 2;
+    }
+    // Check LRC
+    if(LRC == 0) {
+        DataCnt--; // Remove last LRC byte
+        return retvOk;
+    }
+    else return retvFail;
+}
+
+void ModbusUart485_t::ProcessByteIfReceived() {
+    if(!RxProcessed) return;
+    uint8_t b;
+    while(GetByte(&b) == retvOk) {
+        if(Cmd.PutChar(b) == pdrNewCmd) {
+            RxProcessed = false;
+//            EvtQMain.SendNowOrExit(EvtMsg_t(evtIdModbusCmd));
+        } // if new cmd
+    } // while get byte
+}
+
+void ModbusUart485_t::IOnTxEnd() {
+#ifdef USART_SR_TC
+    Params->Uart->SR &= ~USART_SR_TC; // Clear TxCompleted flag
+    for(volatile uint32_t i=0; i<1000; i++) {
+        if(Params->Uart->SR & USART_SR_TC) break; // wait last bit to be shifted out
+    }
+#else
+    Params->Uart->ISR &= ~USART_ISR_TC; // Clear TxCompleted flag
+    for(volatile uint32_t i=0; i<1000; i++) {
+        if(Params->Uart->ISR & USART_ISR_TC) break; // wait last bit to be shifted out
+    }
+#endif
+    PinTxRx.SetLo();
+}
+
+void ModbusUart485_t::Reply() {
+    // Calc LRC
+    uint8_t LRC = Cmd.Addr + Cmd.Function;
+    for(uint32_t i=0; i<Cmd.DataCnt; i++) LRC += Cmd.Data[i];
+    LRC = (uint8_t)(-(int32_t)LRC);
+    Print(":%02X%02X%A%02X\r\n", Cmd.Addr, Cmd.Function, Cmd.Data, Cmd.DataCnt, 0, LRC);
 }
 #endif
 

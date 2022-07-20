@@ -63,7 +63,6 @@ private:
 public:
 #ifdef ACC_ACCELERATIONS_NEEDED
     Accelerations_t Accelerations;
-    uint32_t ThresholdTop, ThresholdBottom;
     void ReadAccelerations() {
         uint8_t RegAddr = ACC_REG_STATUS;
         pi2c->WriteRead(ACC_I2C_ADDR, &RegAddr, 1, (uint8_t*)&Accelerations, ACCELERATIONS_SIZE);

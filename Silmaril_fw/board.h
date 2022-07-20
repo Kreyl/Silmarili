@@ -1,10 +1,12 @@
 #pragma once
 
-#include <inttypes.h>
-
 // ==== General ====
-#define BOARD_NAME          "Silmaril1"
-#define APP_NAME            "Silmaril_HI"
+#define BOARD_NAME          "Silmarill"
+#define APP_NAME            "Hi22Arkenston"
+
+#ifndef TRUE
+#define TRUE 1
+#endif
 
 // MCU type as defined in the ST header.
 #define STM32L151xB
@@ -12,9 +14,14 @@
 // Freq of external crystal if any. Leave it here even if not used.
 #define CRYSTAL_FREQ_HZ     12000000
 
-#define SYS_TIM_CLK         (Clk.APB1FreqHz)
+// OS timer settings
+#define STM32_ST_IRQ_PRIORITY   8
+#define STM32_ST_USE_TIMER      2
+#define STM32_TIMCLK1           (Clk.APB1FreqHz)
+
 #define I2C1_ENABLED        TRUE
 #define I2C_USE_SEMAPHORE   FALSE
+#define I2C_BAUDRATE_HZ     400000
 #define ADC_REQUIRED        TRUE
 
 #if 1 // ========================== GPIO =======================================
@@ -55,21 +62,17 @@
 #endif
 
 // Radio: SPI, PGpio, Sck, Miso, Mosi, Cs, Gdo0
-#define CC_Setup0       SPI1, GPIOA, 5,6,7, 4, 3
+#define CC_Setup0       SPI1, GPIOA, 5,6,7, GPIOA,4, GPIOA,3
 
 #endif // GPIO
 
-#if 1 // =========================== I2C ================================
-#define I2C1_BAUDRATE   400000
-#endif
-
 #if ADC_REQUIRED // ======================= Inner ADC ==========================
-#define ADC_MEAS_PERIOD_MS  6507
+#define ADC_MEAS_PERIOD_MS  1800 //6507
 // Clock divider: clock is generated from the APB2
 #define ADC_CLK_DIVIDER     adcDiv2
 
 // ADC channels
-#define BAT_CHNL            1
+#define BAT_CHNL          1
 
 #define ADC_VREFINT_CHNL    17  // All 4xx, F072 and L151 devices. Do not change.
 #define ADC_CHANNELS        { BAT_CHNL, ADC_VREFINT_CHNL }
@@ -84,36 +87,20 @@
 #if 1 // =========================== DMA =======================================
 #define STM32_DMA_REQUIRED  TRUE
 // ==== Uart ====
-#define UART_DMA_TX     STM32_DMA1_STREAM4
-#define UART_DMA_RX     STM32_DMA1_STREAM5
+#define UART_DMA_TX_MODE(Chnl) (STM32_DMA_CR_CHSEL(Chnl) | DMA_PRIORITY_LOW | STM32_DMA_CR_MSIZE_BYTE | STM32_DMA_CR_PSIZE_BYTE | STM32_DMA_CR_MINC | STM32_DMA_CR_DIR_M2P | STM32_DMA_CR_TCIE)
+#define UART_DMA_RX_MODE(Chnl) (STM32_DMA_CR_CHSEL(Chnl) | DMA_PRIORITY_MEDIUM | STM32_DMA_CR_MSIZE_BYTE | STM32_DMA_CR_PSIZE_BYTE | STM32_DMA_CR_MINC | STM32_DMA_CR_DIR_P2M | STM32_DMA_CR_CIRC)
+#define UART_DMA_TX     STM32_DMA_STREAM_ID(1, 4)
+#define UART_DMA_RX     STM32_DMA_STREAM_ID(1, 5)
 #define UART_DMA_CHNL   0   // Dummy
-#define UART_DMA_TX_MODE(Chnl) \
-                            (STM32_DMA_CR_CHSEL(Chnl) | \
-                            DMA_PRIORITY_LOW | \
-                            STM32_DMA_CR_MSIZE_BYTE | \
-                            STM32_DMA_CR_PSIZE_BYTE | \
-                            STM32_DMA_CR_MINC |       /* Memory pointer increase */ \
-                            STM32_DMA_CR_DIR_M2P |    /* Direction is memory to peripheral */ \
-                            STM32_DMA_CR_TCIE         /* Enable Transmission Complete IRQ */)
-
-#define UART_DMA_RX_MODE(Chnl) \
-                            (STM32_DMA_CR_CHSEL((Chnl)) | \
-                            DMA_PRIORITY_MEDIUM | \
-                            STM32_DMA_CR_MSIZE_BYTE | \
-                            STM32_DMA_CR_PSIZE_BYTE | \
-                            STM32_DMA_CR_MINC |       /* Memory pointer increase */ \
-                            STM32_DMA_CR_DIR_P2M |    /* Direction is peripheral to memory */ \
-                            STM32_DMA_CR_CIRC         /* Circular buffer enable */)
-
 
 #if I2C1_ENABLED // ==== I2C ====
-#define I2C1_DMA_TX     STM32_DMA1_STREAM6
-#define I2C1_DMA_RX     STM32_DMA1_STREAM7
+#define I2C1_DMA_TX     STM32_DMA_STREAM_ID(1, 6)
+#define I2C1_DMA_RX     STM32_DMA_STREAM_ID(1, 7)
 #define I2C1_DMA_CHNL   0   // Dummy
 #endif
 
 #if ADC_REQUIRED
-#define ADC_DMA         STM32_DMA1_STREAM1
+#define ADC_DMA         STM32_DMA_STREAM_ID(1, 1)
 #define ADC_DMA_MODE    STM32_DMA_CR_CHSEL(0) |   /* dummy */ \
                         DMA_PRIORITY_LOW | \
                         STM32_DMA_CR_MSIZE_HWORD | \
@@ -127,11 +114,16 @@
 
 #if 1 // ========================== USART ======================================
 #define PRINTF_FLOAT_EN FALSE
-#define UART_TXBUF_SZ   512
-#define UART_RXBUF_SZ   99
+#define UART_TXBUF_SZ   256
+#define UART_RXBUF_SZ   128
+#define CMD_BUF_SZ      128
+
+#define CMD_UART        USART1
+
+#define UARTS_CNT       1
 
 #define CMD_UART_PARAMS \
-    USART1, UART_GPIO, UART_TX_PIN, UART_GPIO, UART_RX_PIN, \
+    CMD_UART, UART_GPIO, UART_TX_PIN, UART_GPIO, UART_RX_PIN, \
     UART_DMA_TX, UART_DMA_RX, UART_DMA_TX_MODE(UART_DMA_CHNL), UART_DMA_RX_MODE(UART_DMA_CHNL)
 
 #endif

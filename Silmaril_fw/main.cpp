@@ -1,14 +1,18 @@
-#include "kl_lib.h"
 #include "board.h"
 #include "led.h"
 #include "vibro.h"
 #include "Sequences.h"
 #include "radio_lvl1.h"
 #include "kl_i2c.h"
+#include "kl_lib.h"
+#include "kl_buf.h"
 #include "MsgQ.h"
-#include "main.h"
 #include "acc_mma8452.h"
-#include "kl_adc.h"
+#include "adcL151.h"
+
+#include "Config.h"
+
+#include <vector>
 
 #if 1 // ======================== Variables and defines ========================
 // Forever
@@ -18,22 +22,18 @@ CmdUart_t Uart{&CmdUartParams};
 static void ITask();
 static void OnCmd(Shell_t *PShell);
 
+static void ReadAndSetupMode();
+
+// EEAddresses
 #define EE_ADDR_DEVICE_ID       0
 
-uint8_t ID;
 static const PinInputSetup_t DipSwPin[DIP_SW_CNT] = { DIP_SW6, DIP_SW5, DIP_SW4, DIP_SW3, DIP_SW2, DIP_SW1 };
 static uint8_t GetDipSwitch();
-static uint8_t ISetID(int32_t NewID);
-void ReadIDfromEE();
 
-void ReadAndSetupMode();
-void EnterIdle();
-void CheckRxTable();
-
-LedSmooth_t Led {LED_CTRL_PIN, 1000}; // 2500Hz PWM to allow ST1CC40 to handle it
+// ==== Periphery ====
 Vibro_t Vibro {VIBRO_SETUP};
+LedSmooth_t Led {LED_CTRL_PIN, 1000}; // 2500Hz PWM to allow ST1CC40 to handle it
 
-uint8_t SignalTx = SIGN_SILMARIL; // Always
 bool IsIdle = true;
 bool IsVibrating = true;
 
@@ -41,15 +41,51 @@ Acc_t Acc(&i2c1);
 PinOutput_t AccPwr(ACC_PWR_PIN);
 
 // ==== Timers ====
-static TmrKL_t TmrEverySecond {MS2ST(1000), evtIdEverySecond, tktPeriodic};
-static TmrKL_t TmrNoMovement  {MS2ST(4500), evtIdNoMove, tktOneShot};
-static TmrKL_t TmrRxTableCheck {MS2ST(3600), evtIdCheckRxTable, tktPeriodic};
-static int32_t TimeS;
+static TmrKL_t TmrEverySecond {TIME_MS2I(1000), evtIdEverySecond, tktPeriodic};
+static TmrKL_t TmrNoMovement  {TIME_MS2I(4500), evtIdNoMove, tktOneShot};
+static TmrKL_t TmrRxTableCheck {TIME_MS2I(3600), evtIdCheckRxTable, tktPeriodic};
+static uint32_t TimeS;
+#endif
+
+#if 1 // ========================== Logic ======================================
+// === Types ===
+#define TYPE_OBSERVER           0
+#define TYPE_NOTHING            0 // What to show
+#define TYPE_DARKSIDE           1
+#define TYPE_LIGHTSIDE          2
+#define TYPE_BOTH               3 // Allow to tx just in case
+
+#define TYPE_CNT                4
+
+void EnterIdle() {
+    TmrNoMovement.StartOrRestart();
+    Led.StartOrRestart(lsqDim);
+}
+
+void CheckRxTable() {
+    // Analyze table: get count of every type near
+    uint32_t TypesCnt[TYPE_CNT] = {0};
+    RxTable_t *Tbl = Radio.GetRxTable();
+    Tbl->ProcessCountingDistinctTypes(TypesCnt, TYPE_CNT);
+    uint32_t Cnt = TypesCnt[TYPE_DARKSIDE] + TypesCnt[TYPE_LIGHTSIDE] + TypesCnt[TYPE_BOTH];
+    // Fade if nobody around
+    if(Cnt == 0) {
+        if(!IsIdle) {
+            EnterIdle();
+            IsIdle = true;
+        }
+    }
+    else {
+        IsIdle = false;
+        TmrNoMovement.Stop();
+        Led.StartOrContinue(lsqMagicIsNear);
+    }
+}
 #endif
 
 int main(void) {
     // ==== Init Vcore & clock system ====
-    SetupVCore(vcore1V5);
+    SetupVCore(vcore1V2);
     Clk.SetMSI4MHz();
     Clk.EnableHSI();    // Required foe ADC
     Clk.UpdateFreqValues();
@@ -61,15 +97,15 @@ int main(void) {
 
     // ==== Init hardware ====
     Uart.Init();
-    Uart.StartRx();
-    ReadIDfromEE();
-    Printf("\r%S %S ID=%u\r", APP_NAME, XSTRINGIFY(BUILD_TIME), ID);
+    Printf("\r%S %S\r", APP_NAME, XSTRINGIFY(BUILD_TIME));
     Clk.PrintFreqs();
+    Random::Seed(GetUniqID3());   // Init random algorythm with uniq ID
 
     Led.Init();
     Vibro.Init();
+    Vibro.Init();
     Vibro.StartOrRestart(vsqBrr);
-    Vibro.SetupSeqEndEvt(evtIdVibroEnd);
+    Vibro.SetupSeqEndEvt(evtIdVibroSeqDone);
 
     AccPwr.Init();
     AccPwr.SetHi();
@@ -102,7 +138,7 @@ void ITask() {
         switch(Msg.ID) {
             case evtIdEverySecond:
                 TimeS++;
-                ReadAndSetupMode();
+//                ReadAndSetupMode();
                 break;
 
             case evtIdCheckRxTable: CheckRxTable(); break;
@@ -125,7 +161,7 @@ void ITask() {
                 }
                 break;
 
-            case evtIdVibroEnd:
+            case evtIdVibroSeqDone:
 //                Printf("VibroEnd\r");
                 IsVibrating = false;
                 break;
@@ -134,60 +170,10 @@ void ITask() {
                 OnCmd((Shell_t*)Msg.Ptr);
                 ((Shell_t*)Msg.Ptr)->SignalCmdProcessed();
                 break;
-
             default: Printf("Unhandled Msg %u\r", Msg.ID); break;
         } // Switch
     } // while true
 } // ITask()
-
-void CheckRxTable() {
-    uint32_t Cnt = Radio.RxTable.GetCount();
-//    Printf("TableCnt: %u\r", Cnt);
-    uint8_t OatherCnt = 0;
-    if(Cnt > 0) {
-        // Analyze RxTable
-        for(uint32_t i=0; i<Cnt; i++) {
-            if(Radio.RxTable.Buf[i].Signal & SIGN_OATH) {
-                OatherCnt++;
-                if(OatherCnt == 3) break; // Stop if enough oathers
-            }
-        }
-        Radio.RxTable.Clear();
-    } // Cnt > 0
-    // Process what counted
-    if(OatherCnt == 0) {
-        if(!IsIdle) {
-            EnterIdle();
-            IsIdle = true;
-        }
-    }
-    else {
-        IsIdle = false;
-        TmrNoMovement.Stop();
-        Led.StartOrContinue(lsqOathIsNear);
-    }
-}
-
-void EnterIdle() {
-    TmrNoMovement.StartOrRestart();
-    Led.StartOrRestart(lsqTop);
-}
-
-__unused
-static const uint8_t PwrTable[12] = {
-        CC_PwrMinus30dBm, // 0
-        CC_PwrMinus27dBm, // 1
-        CC_PwrMinus25dBm, // 2
-        CC_PwrMinus20dBm, // 3
-        CC_PwrMinus15dBm, // 4
-        CC_PwrMinus10dBm, // 5
-        CC_PwrMinus6dBm,  // 6
-        CC_Pwr0dBm,       // 7
-        CC_PwrPlus5dBm,   // 8
-        CC_PwrPlus7dBm,   // 9
-        CC_PwrPlus10dBm,  // 10
-        CC_PwrPlus12dBm   // 11
-};
 
 __unused
 void ReadAndSetupMode() {
@@ -197,62 +183,23 @@ void ReadAndSetupMode() {
     // ==== Something has changed ====
     Printf("Dip: 0x%02X\r", b);
     OldDipSettings = b;
-    RMsg_t msg;
+//    RMsg_t msg;
     // Select TX pwr
-    msg.Cmd = rmsgSetPwr;
-    b &= 0b1111; // Remove high bits
-    msg.Value = (b > 11)? CC_PwrPlus12dBm : PwrTable[b];
-    Printf("Pwr=%u\r", b);
-    Radio.RMsgQ.SendNowOrExit(msg);
+//    msg.Cmd = rmsgSetPwr;
+//    b &= 0b1111; // Remove high bits
+//    msg.Value = (b > 11)? CC_PwrPlus12dBm : PwrTable[b];
+//    Printf("Pwr=%u\r", b);
+//    Radio.RMsgQ.SendNowOrExit(msg);
 }
 
-
-#if 1 // ========================= Command processing ==========================
+#if 1 // ================= Command processing ====================
 void OnCmd(Shell_t *PShell) {
 	Cmd_t *PCmd = &PShell->Cmd;
     // Handle command
-    if(PCmd->NameIs("Ping")) {
-        PShell->Ack(retvOk);
-    }
-    else if(PCmd->NameIs("Version")) PShell->Printf("%S %S\r", APP_NAME, XSTRINGIFY(BUILD_TIME));
+    if(PCmd->NameIs("Ping")) PShell->Ok();
+    else if(PCmd->NameIs("Version")) PShell->Print("%S %S\r", APP_NAME, XSTRINGIFY(BUILD_TIME));
 
-    else if(PCmd->NameIs("GetID")) PShell->Reply("ID", ID);
-
-    else if(PCmd->NameIs("SetID")) {
-        if(PCmd->GetNext<uint8_t>(&ID) != retvOk) { PShell->Ack(retvCmdError); return; }
-        uint8_t r = ISetID(ID);
-//        RMsg_t msg;
-//        msg.Cmd = R_MSG_SET_CHNL;
-//        msg.Value = ID2RCHNL(ID);
-//        Radio.RMsgQ.SendNowOrExit(msg);
-        PShell->Ack(r);
-    }
-
-    else PShell->Ack(retvCmdUnknown);
-}
-#endif
-
-#if 1 // =========================== ID management =============================
-void ReadIDfromEE() {
-    ID = EE::Read32(EE_ADDR_DEVICE_ID);  // Read device ID
-    if(ID < ID_MIN or ID > ID_MAX) {
-        Printf("\rUsing default ID\r");
-        ID = 0;
-    }
-}
-
-uint8_t ISetID(int32_t NewID) {
-    if(NewID < ID_MIN or NewID > ID_MAX) return retvFail;
-    uint8_t rslt = EE::Write32(EE_ADDR_DEVICE_ID, NewID);
-    if(rslt == retvOk) {
-        ID = NewID;
-        Printf("New ID: %u\r", ID);
-        return retvOk;
-    }
-    else {
-        Printf("EE error: %u\r", rslt);
-        return retvFail;
-    }
+    else PShell->CmdUnknown();
 }
 #endif
 
