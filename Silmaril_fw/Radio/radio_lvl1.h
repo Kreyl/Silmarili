@@ -57,8 +57,8 @@ union rPkt_t {
 #if 1 // =================== Channels, cycles, Rssi  ===========================
 #define RCHNL_EACH_OTH      2
 
-#define RX_DURATION_MS      108
-#define SLEEP_DURATION_MS   630
+#define RX_DURATION_MS      252
+#define SLEEP_DURATION_MS   999
 
 #endif
 
